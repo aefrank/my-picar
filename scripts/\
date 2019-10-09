@@ -1,0 +1,44 @@
+'''
+Filename: picar_move.py
+Description: First attempt at getting the PiCar to run a custom program.
+Author: Andi Frank
+E-mail: a2frank@eng.ucsd.edu
+Purpose: CSE 276A: Intro to Robotics; Fall 2019
+
+Inspiration drawn from:
+    https://github.com/korzen/PiCar_ROS/
+
+'''
+
+import time
+import SunFounder_PiCar.picar as pc
+
+pc.setup()
+fw = pc.front_wheels.Front_Wheels(db="config")
+bw = pc.back_wheels.Back_Wheels(db="config")
+
+fw.turning_max = 30
+fwd_speed = 20
+bkw_speed = 50
+
+bw.speed = fwd_speed
+
+fw.ready()
+bw.ready()
+
+DELAY = .2
+
+try:
+    fw.turn_straight()
+    bw.forward()
+    bw.speed = fwd_speed
+    time.sleep(10)
+    bw.stop()
+except KeyboardInterrupt:
+    print("KeyboardInterrupt, motor stop.")
+    bw.stop()
+finally:
+    print("Finish, motor stop.")
+    bw.stop()
+
+

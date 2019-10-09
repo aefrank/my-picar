@@ -1,0 +1,12 @@
+forward_A = 0
+
+forward_B = 0
+
+# Left -> toward negative
+# Right -> toward positive
+turning_offset = 14
+
+pan_offset = -23
+
+tilt_offset = 18
+
