@@ -1,13 +1,9 @@
 '''
-Filename: picar_move.py
-Description: First attempt at getting the PiCar to run a custom program.
+Filename: speed_test.py
+Description: Calibrating parameters.
 Author: Andi Frank
 E-mail: a2frank@eng.ucsd.edu
 Purpose: CSE 276A: Intro to Robotics; Fall 2019
-
-Inspiration drawn from:
-    https://github.com/korzen/PiCar_ROS/
-
 '''
 
 import sys
