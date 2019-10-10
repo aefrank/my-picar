@@ -10,7 +10,7 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 #                       IMPORTS
 ##############################################################
 import sys
-from time import sleep
+from time import sleep, monotonic
 from math import sin, cos, tan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
@@ -68,32 +68,32 @@ def D(kd=1, error=0, last_error=0, dt=1):
 
 def RHO(s,g):
     rho = g-s
-    rho[2] = 0
+    rho[2] = atan2(rho[1],rho[0])
     return rho
 
-def ALPHA(s=[0,0,0],g=None,rho=None):
-    if ((g is None) and (rho is None)) or ((g is not None) and (rho is not None)):
-        raise InputError("You must input either g or rho.")
-    if rho is None:
-        rho = RHO(s,g)
-    return angle_a2b( a=s[2], b=atan2(rho[1],rho[0]))
+def ALPHA(s,r):
+    return angle_a2b( a=s[2], b=r[2] )
 
-def BETA(s=None,g=[0,0,0],rho=None): 
-    if ((s is None) and (rho is None)) or ((s is not None) and (rho is not None)):
-        raise InputError("You must input either s or rho.")
-    if rho is None:
-        rho = RHO(s,g)
-    return angle_a2b( a=atan2(rho[1],rho[0]), b=g[2] )
+def BETA(r,g):
+    return angle_a2b( a=r[2], b=g[2] )
+
+# def ALPHA(s,g):
+#     rho = RHO(s,g)
+#     return angle_a2b( a=s[2], b=rho[2] )
+# 
+# def BETA(s,g): 
+#     rho = RHO(s,g)
+#     return angle_a2b( a=rho[2], b=g[2] )
 
 
 def dRHO(v,alpha):
     return -v*cos(alpha)
 
 def dALPHA(v,gamma,rho,alpha):
-    return angle_a2b(a=gamma, b=v*sin(alpha)/norm(rho))
+    return angle_a2b(a=gamma, b=v*sin(alpha)/norm(rho[:2]))
 
 def dBETA(v,rho,alpha):
-    return angle_a2b(a=0, b=-v*cos(alpha)/norm(rho))
+    return angle_a2b(a=0, b=-v*cos(alpha)/norm(rho[:2]))
 
 
 
@@ -136,10 +136,17 @@ class Picar:
 
     def map_turn(self, angle):
         angle = angle * 180 / pi    # picar deals in degrees
+        
+        # Deal with offsets around 0
+        if abs(angle) < 5:
+            return 0
+        if abs(angle) < 10:
+            return angle
+
         if angle > 0:
-            angle = int(angle*1.27 - 0.55)
+            angle = int(angle*1.25)
         else:
-            angle = int(angle*0.88 - 8.29)
+            angle = int(angle*1.16)
         return angle
 
 
@@ -147,7 +154,7 @@ class Picar:
     #                       WORLD FRAME
     ##############################################################
     def V(self,rho):
-        v = P(self.Kpr,norm(rho))
+        v = P(self.Kpr,norm(rho[:2]))
         if v > self.MAX_SPEED:
             v = self.MAX_SPEED
         return v
@@ -169,47 +176,80 @@ class Picar:
 
 
     def travel(self, waypoints):
-        dt = self.loop_delay
-        t = 0
-        self.s = waypoints[0]
-        g = waypoints[1]
-        self.rho = RHO(self.s,g)
+        breakflag = False
+        start = 0
+        self.s = waypoints[start]
+        g = waypoints[start+1]
+        
+        self.rho    = RHO  (self.s,g)
+        self.alpha  = ALPHA(self.s,g)
+        self.beta   = BETA (self.s,g)
 
+        try:
+            #Initialize times
+            dt = self.loop_delay
+            t = 0
+            mono_time = monotonic()
 
-        # Stop when close enough
-        while ( norm(self.rho)>0.1 and abs(self.s[2]-g[2])<pi/6 ):
-            
-            # Current world state
-            # x = self.s[0]
-            # y = self.s[1]
-            theta = self.s[2]
+            # Stop when close enough
+            while ( norm(self.rho[:2])>0.1 or abs(self.s[2]-g[2])<pi/6 ) and not breakflag:
 
-            # Current ego-centric state
-            self.rho = RHO(self.s,g)
-            self.alpha = ALPHA(s=self.s,rho=self.rho)
-            self.beta = BETA(g=g,rho=self.rho)
+                # Calculate controls
+                self.speed      = self.V (self.rho)
+                self.turn_angle = self.GAMMA (self.alpha, self.beta)
 
-            # Calculate controls
-            self.speed = self.V(self.rho)
-            self.turn_angle = self.GAMMA(self.alpha,self.beta)
+                # Send controls to hardware
+                self.turn (     self.map_turn(self.turn_angle) )
+                self.bw.speed = self.map_speed(self.speed)
 
-            # Send controls to hardware
-            self.turn( self.map_turn(self.turn_angle) )
-            self.bw.speed = self.map_speed(self.speed)
+                # Calculate change in world state
+                dx      = self.dX(     self.speed, self.s[2] )
+                dy      = self.dY(     self.speed, self.s[2] )
+                dtheta  = self.dTHETA( self.speed, self.turn_angle )
 
-            # Calculate change in world state
-            dx = self.dX(self.speed,theta)
-            dy = self.dY(self.speed,theta)
-            dtheta = self.dTHETA(self.speed,self.turn_angle)*dt
+                # Update world state
+                self.s = self.s + np.array([dx, dy, dtheta])*dt
+                # Keep theta in [-pi, pi]
+                self.s[2] = angle_a2b(a=0, b=self.s[2])
 
-            # Update world state
-            self.s = self.s + dt*np.array([dx, dy, dtheta])
-            print("x: {:.4f}\ty: {:.4f}\tth: {:.4f}\tt: {:.3f}".format(self.s[0],self.s[1],self.s[2],t))
+                # Update ego-centric state
+                self.rho   = RHO   (self.s, g) 
+                self.alpha = ALPHA (self.s, self.rho)   #(self.s,g) 
+                self.beta  = BETA  (self.rho, g)        #(self.s,g)
 
-            sleep(self.loop_delay)
-            t = t+dt
+                if t % 1 < dt:
+                    print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
+                        self.s[0], self.s[1], self.s[2]*180/pi, t) )
+                    print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
+                        dx, dy, dtheta*180/pi,dt ) )
+                    print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
+                        self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
+                    print("Robot:  da: {:.2f}\tdb: {:.2f}\tdrho: {:.2f}\trho_angle: {:.2f}".format(
+                        dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
+                        dBETA  (self.speed, self.rho, self.alpha) *180/pi,
+                        dRHO   (self.speed,self.alpha), 
+                        self.rho[2] * 180/pi
+                        ) )
+                    print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
+                        g[0],g[1],g[2]*180/pi) )
+                    print()
 
+                # Loop delay
+                sleep(self.loop_delay)
+                dt = monotonic() - mono_time
+                mono_time = mono_time + dt
+                t = t+dt
 
+                #if t>2:
+                #    breakflag = True
+
+            print("Goal reached, halting.")
+            return
+
+        except Exception as e:
+            raise e
+        finally:
+            self.halt()    
 
 
 
@@ -234,13 +274,19 @@ class Picar:
         Tune the overshoot [deg] and delay [sec] if it's too jittery.
         '''
         self.turn(overshoot)
-        time.sleep(delay)
+        sleep(delay)
         self.turn(-overshoot)
-        time.sleep(delay)
-        fw.turn_straight()
+        sleep(delay)
+        self.fw.turn_straight()
 
 
+    def stop_motors(self):
+        self.bw.stop()
 
+
+    def halt(self):
+        self.stop_motors()
+        self.turn_straight()
 
 
 

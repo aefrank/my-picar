@@ -55,9 +55,10 @@ def main():
     if len(sys.argv) > 2:
         Kpa = float(sys.argv[2])
     if len(sys.argv) > 3:
-        Kpb = float(sys.argb[3])
+        Kpb = float(sys.argv[3])
 
-    pc = Picar(kpr=float(Kpr), kpa=float(Kpa), kpb=float(Kpb), loop_delay=0.1)
+    pc = Picar(kpr=float(Kpr), kpa=float(Kpa), kpb=float(Kpb), loop_delay=0.001)
+
     pc.travel(waypoints)
 
 
