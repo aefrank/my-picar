@@ -17,20 +17,6 @@ from numpy.linalg import norm
 import helpers
 from my_picar import Picar
 
-# Proportional gain
-Kpr = 0
-Kpa = 0
-Kpb = 0
-
-# Integral gain
-Kir = 0
-Kia = 0
-Kib = 0
-
-# Derivative gain
-Kdr = 0
-Kda = 0
-Kdb = 0
 
 
 def main():

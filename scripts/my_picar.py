@@ -21,12 +21,6 @@ sys.path.append("../SunFounder_PiCar")
 import picar
 
 
-def clamp(angle):
-    '''
-    Clamp angle from 0 to pi.
-    '''
-    return (angle+pi) % 2*pi - pi 
-
 
 def angle_a2b(a,b):
     '''
@@ -72,12 +66,6 @@ def RHO(s,g):
     rho[2] = atan2(rho[1],rho[0])
     return rho
 
-# def ALPHA(s,r):
-#     return angle_a2b( a=s[2], b=r[2] )
-# 
-# def BETA(r,g):
-#     return angle_a2b( a=r[2], b=g[2] )
-
 def ALPHA(s,g):
     rho = RHO(s,g)
     return angle_a2b( a=s[2], b=rho[2] )
@@ -87,6 +75,7 @@ def BETA(s,g):
     return angle_a2b( a=rho[2], b=g[2] )
 
 
+# Magnitude only
 def dRHO(v,alpha):
     return -v*cos(alpha)
 
@@ -104,7 +93,11 @@ def dBETA(v,rho,alpha):
 ##############################################################
 
 class Picar:
-
+    '''
+    Class to represent Picar parameters and outputs.
+    '''
+    
+    # @TODO: Clean up input parameters to the important ones; try to group Ks
     def __init__(self, max_turn=45, speed=50, configfile="config", delay=0.005, L=0.145,
                     kpr=1, kpa=0, kpb=0, kdr=0, kir=0,
                     max_speed_world=0.4, max_turn_world=0.626):
@@ -140,10 +133,14 @@ class Picar:
         self.last_rho = 0
 
 
+
+    # Maps --> use calibration to map real world speed/angle to the control signals for the Picar motors
+    # @TODO: Address 'kspeed' parameter
     def map_speed(self, spd):
         s = int(kspeed*spd)
         return min(s,100)
 
+    # The reverse; go from control signal to real world
     def inverse_map_speed(self,spd):
         return spd/kspeed
 
@@ -166,47 +163,41 @@ class Picar:
     ##############################################################
     #                       WORLD FRAME
     ##############################################################
-# PID controller
-# v = P(kp=self.Kpr, error=rho_mag) # - D(kd=self.Kdr, error=error, last_error=self.last_error, dt=dt) - I(ki=self.Kir, integral=self.integral_error, new_error=error, dt=dt)
-# update integral and last_rho
-# self.integral_error += error
-# self.last_error = error
-# v = abs(v) # alpha and beta cover the direction
-# Don't go over max speed
-
 
     def V(self, rho, dt=1):
         #  # Get linear direction and magnitude of rho
-        #  rho_mag = norm(self.rho[:2])
         if abs(self.alpha) > pi:
             rho_sign = -1 
         else:
             rho_sign = 1
         rho *= rho_sign
          
-        
         v = P(self.Kpr, rho)
+        # I and D control
         #+ I(ki=self.Kir, new_error=rho, integral=self.integral_rho, dt=dt) - min(0,D(kd=self.Kdr, error=rho, last_error=self.last_rho, dt=dt))
-        self.integral_rho += rho
-        self.last_rho = rho
+        # self.integral_rho += rho
+        # self.last_rho = rho
        
+        # Make speed dependent on directional errors, with alpha more important when rho is large and vice versa
         # v += abs(self.Kpr*rho*self.alpha + self.Kpr/rho*self.beta)/100 # don't stop moving if these have huge errors -- but if they cancel, so be it
         
-        #v += abs(self.Kpb*self.beta)/25
-
+        # Don't go below 0
         v = max(v,0)
 
-        # v = abs(v)
+        # Or above max
         if v > self.MAX_SPEED:
             v = self.MAX_SPEED
         return v
 
+    # Change steering based on rho? e.g. if rho is changing quickly err toward alpha
     def GAMMA(self,alpha,beta,dt):
         rho = norm(self.rho[:2])
         a = P(self.Kpa, alpha)
         b = P(self.Kpb, beta)
-        gamma = rho*a + b+2*self.Kpb/rho -b*(self.last_rho-rho)
+        # gamma = rho*a + b+2*self.Kpb/rho -b*(self.last_rho-rho)
         gamma = angle_a2b(a=0, b=gamma)
+
+        # Stop at max
         if abs(gamma) > self.MAX_TURNING_ANGLE:
             gamma = sign(gamma)*self.MAX_TURNING_ANGLE
         return gamma
@@ -221,15 +212,23 @@ class Picar:
         return angle_a2b(a=0, b=v*tan(gamma)/self.L)
 
 
+
+
+
+    '''
+    The big important function (as of now).
+    '''
     def travel(self, waypoints):
         breakflag = False
-        start = 0
-        self.s = waypoints[start]
+
+        # Initialize world parameters
+        self.s = waypoints[0]
         g = waypoints[start+1]
         dx=0
         dy=0
         dtheta=0
 
+        # Initialize robot-centric reference
         self.rho    = RHO  (self.s,g)
         self.alpha  = ALPHA(self.s,g)
         self.beta   = BETA (self.s,g)
@@ -240,23 +239,15 @@ class Picar:
             t = 0
             mono_time = monotonic()
             
+            # For each waypoint
             for i in range(len(waypoints)-1):
-                
-                w = waypoints[i]
-                self.s[0] = (self.s[0]+3*w[0])/4
-                self.s[1] = (self.s[1]+3*w[1])/4
-                self.s[2] = (self.s[2]+3*w[2])/4
-                g = waypoints[i+1]
-                
-                
                 self.rho    = RHO  (self.s,g)
                 self.alpha  = ALPHA(self.s,g)
                 self.beta   = BETA (self.s,g)
                 
-                
                 # Stop when close enough
-                while ( not (    norm(self.rho[:2])<0.2                 # within delta of goal
-                            and 1 #abs(angle_a2b(self.s[2],g[2])) < pi/2  # heading is almost correct
+                while ( not (    norm(self.rho[:2])<0.1                 # within delta (10cm) of goal
+                            and  abs(angle_a2b(self.s[2],g[2])) < pi/6  # heading is almost correct
                             )
                         and not breakflag
                     ):
@@ -286,13 +277,8 @@ class Picar:
                     self.rho  = RHO(self.s,g)# Don't do this one it gets messed up with direction -> += dRHO  (v=self.speed, alpha=self.alpha) 
                     self.alpha  = ALPHA(self.s,g)
                     self.beta   = BETA (self.s,g)
-                    
-                    # self.alpha  += dALPHA(v=self.speed, gamma=self.turn_angle, rho=self.rho, alpha=self.alpha)*dt
-                    # self.alpha  = angle_a2b(a=0, b=self.alpha) # clamp between -pi and pi
-                    # self.beta   += dBETA (v=self.speed, rho=self.rho, alpha=self.alpha)*dt
-                    # self.beta   = angle_a2b(a=0, b=self.beta)
 
-
+                    # Print status every half second
                     if t % 0.5 < dt:
                         print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
                             self.s[0], self.s[1], self.s[2]*180/pi, t) )
@@ -315,9 +301,6 @@ class Picar:
                     dt = monotonic() - mono_time
                     mono_time = mono_time + dt
                     t = t+dt
-
-                    #if t>2:
-                    #    breakflag = True
 
                 print("Goal reached, halting.")
                 print("-------------------------------------------------------") 
@@ -344,8 +327,11 @@ class Picar:
                     )
                 print('\n')
 
+        # I can't remember why I needed this except clause but I think it didn't work right without it
         except Exception as e:
             raise e
+
+        # Print state and halt picar before exiting
         finally:
             print("\n-------------------------------------------------------") 
             print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
@@ -402,10 +388,16 @@ class Picar:
 
 
     def stop_motors(self):
+        '''
+        Stop picar motors, leave steering as is.
+        '''
         self.bw.stop()
 
 
     def halt(self):
+        '''
+        Stop picar and turn steering forward.
+        '''
         self.stop_motors()
         self.turn_straight()
 
