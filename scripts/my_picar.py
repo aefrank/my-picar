@@ -159,7 +159,7 @@ class Picar:
         if angle > 0:
             angle = max(min(int(angle*1.1),35),0)
         else:
-            angle = max(int(angle*1.05), -35)
+            angle = max(int(angle*0.8), -35)
         return int(angle)
 
 
@@ -185,7 +185,8 @@ class Picar:
         rho *= rho_sign
          
         
-        v = P(self.Kpr, rho) + I(ki=self.Kir, new_error=rho, integral=self.integral_rho, dt=dt) - min(0,D(kd=self.Kdr, error=rho, last_error=self.last_rho, dt=dt))
+        v = P(self.Kpr, rho)
+        #+ I(ki=self.Kir, new_error=rho, integral=self.integral_rho, dt=dt) - min(0,D(kd=self.Kdr, error=rho, last_error=self.last_rho, dt=dt))
         self.integral_rho += rho
         self.last_rho = rho
        
@@ -224,14 +225,14 @@ class Picar:
         breakflag = False
         start = 0
         self.s = waypoints[start]
-        
-        self.rho    = RHO  (self.s,g)
-        self.alpha  = ALPHA(self.s,g)
-        self.beta   = BETA (self.s,g)
-        
+        g = waypoints[start+1]
         dx=0
         dy=0
         dtheta=0
+
+        self.rho    = RHO  (self.s,g)
+        self.alpha  = ALPHA(self.s,g)
+        self.beta   = BETA (self.s,g)
 
         try:
             #Initialize times
@@ -240,10 +241,22 @@ class Picar:
             mono_time = monotonic()
             
             for i in range(len(waypoints)-1):
+                
+                w = waypoints[i]
+                self.s[0] = (self.s[0]+3*w[0])/4
+                self.s[1] = (self.s[1]+3*w[1])/4
+                self.s[2] = (self.s[2]+3*w[2])/4
                 g = waypoints[i+1]
+                
+                
+                self.rho    = RHO  (self.s,g)
+                self.alpha  = ALPHA(self.s,g)
+                self.beta   = BETA (self.s,g)
+                
+                
                 # Stop when close enough
-                while ( not (    norm(self.rho[:2])<0.25                 # within delta of goal
-                            and abs(angle_a2b(self.s[2],g[2])) < pi/3  # heading is almost correct
+                while ( not (    norm(self.rho[:2])<0.2                 # within delta of goal
+                            and 1 #abs(angle_a2b(self.s[2],g[2])) < pi/2  # heading is almost correct
                             )
                         and not breakflag
                     ):
@@ -306,12 +319,35 @@ class Picar:
                     #if t>2:
                     #    breakflag = True
 
-            print("Goal reached, halting.")
-            print("-------------------------------------------------------") 
+                print("Goal reached, halting.")
+                print("-------------------------------------------------------") 
+
+                print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
+                    self.s[0], self.s[1], self.s[2]*180/pi, t) )
+                print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
+                    dx, dy, dtheta*180/pi,dt ) )
+                print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
+                    self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
+                print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
+                    dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
+                    dBETA  (self.speed, self.rho, self.alpha) *180/pi,
+                    self.rho[0], self.rho[1], 
+                    self.rho[2] * 180/pi
+                    ) )
+                print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
+                    g[0],g[1],g[2]*180/pi) )
+                print()
+                print("-------------------------------------------------------") 
+                print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
+                    norm(self.rho[:2]), 
+                    angle_a2b( self.s[2], g[2]) * 180/pi)
+                    )
+                print('\n')
 
         except Exception as e:
             raise e
         finally:
+            print("\n-------------------------------------------------------") 
             print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
                 self.s[0], self.s[1], self.s[2]*180/pi, t) )
             print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
