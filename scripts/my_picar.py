@@ -40,25 +40,87 @@ def angle_a2b(a,b):
     
 kspeed = 215
 
+
+
+
+
+
+
+
+
+
+
 ##############################################################
 #                       PID CONTROLLER
 ##############################################################
 
-def P(kp=1, error=0):
-    return kp*error
+class PID():
 
-def I(ki=1, integral=0, new_error=0, dt=1):
-    integral += new_error*dt
-    return ki*integral
+    def __init__(Kp=0, Ki=0, Kd=0, integral_error=0, last_error=0, dt=1, 
+                    integral_max=None, integral_active_region=None):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
 
-def D(kd=1, error=0, last_error=0, dt=1): 
-    derivative = (error-last_error)/dt
-    return kd*derivative
+        self.integral_error = integral_error
+        self.integral_max = integral_max
+        self.integral_active_region = abs(integral_active_region)
+        self.last_error = last_error
+
+        self.dt = dt
+
+    def P(self, error=0):
+        '''
+        Proportional term
+        '''
+        return self.Kp*error
+
+
+
+    def I(self, error=0):
+        '''
+        Integral term
+        '''
+        # If we have defined an active region for the integral controller,
+        # only use integral control when error is within that region.
+        # Helps control integral windup.
+        if (integral_active_region is not None):
+
+            # Check if you are outside integral_active_region
+            if (abs(error) > integral_active_region):
+                # You're in the inactive region. Return no control signal.
+                return 0
+
+        # If you've made it here, you either have no defined active region,
+        # or you are within that active region. Proceed as normal.
+
+        # Update integral_error
+        self.integral_error += error
+
+        # If integral_max is defined, limit integral windup
+        if self.integral_max is not None:
+            # Don't let integral pass limit
+            if abs(self.integral_error) > self.integral_max:
+                self.integral_error = sign(self.integral_error)*self.integral_max
+
+        return self.Ki*integral*self.dt
+
+
+
+    def D(self, error=0): 
+        '''
+        Derivative term
+        '''
+        d_error = error - self.last_error
+        # Update previous error
+        self.last_error = error
+
+        return self.Kd*d_error*self.dt
 
 
 
 ##############################################################
-#                       ROBOT FRAME
+#                  PARAMETER FUNCTIONS
 ##############################################################
 
 def RHO(s,g):
@@ -202,11 +264,11 @@ class Picar:
             gamma = sign(gamma)*self.MAX_TURNING_ANGLE
         return gamma
 
-    def dX(self,v,theta):
-        return v*cos(theta)
+    def dX(self,v,h):
+        return v*cos(h)
 
-    def dY(self,v,theta):
-        return v*sin(theta)
+    def dY(self,v,h):
+        return v*sin(h)
 
     def dTHETA(self,v,gamma):
         return angle_a2b(a=0, b=v*tan(gamma)/self.L)
@@ -226,7 +288,7 @@ class Picar:
         g = waypoints[start+1]
         dx=0
         dy=0
-        dtheta=0
+        dh=0
 
         # Initialize robot-centric reference
         self.rho    = RHO  (self.s,g)
@@ -266,11 +328,11 @@ class Picar:
                     # Calculate change in world state
                     dx      = self.dX(     self.speed, self.s[2] )
                     dy      = self.dY(     self.speed, self.s[2] )
-                    dtheta  = self.dTHETA( self.speed, self.turn_angle )
+                    dh  = self.dTHETA( self.speed, self.turn_angle )
 
                     # Update world state
-                    self.s += np.array([dx, dy, dtheta])*dt
-                    # Keep theta in [-pi, pi]
+                    self.s += np.array([dx, dy, dh])*dt
+                    # Keep h in [-pi, pi]
                     self.s[2] = angle_a2b(a=0, b=self.s[2])
 
                     # Update ego-centric state
@@ -283,7 +345,7 @@ class Picar:
                         print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
                             self.s[0], self.s[1], self.s[2]*180/pi, t) )
                         print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                            dx, dy, dtheta*180/pi,dt ) )
+                            dx, dy, dh*180/pi,dt ) )
                         print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
                             self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
                         print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
@@ -308,7 +370,7 @@ class Picar:
                 print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
                     self.s[0], self.s[1], self.s[2]*180/pi, t) )
                 print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                    dx, dy, dtheta*180/pi,dt ) )
+                    dx, dy, dh*180/pi,dt ) )
                 print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
                     self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
                 print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
@@ -337,7 +399,7 @@ class Picar:
             print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
                 self.s[0], self.s[1], self.s[2]*180/pi, t) )
             print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                dx, dy, dtheta*180/pi,dt ) )
+                dx, dy, dh*180/pi,dt ) )
             print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
                 self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
             print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
