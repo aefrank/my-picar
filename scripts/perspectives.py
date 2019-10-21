@@ -77,6 +77,9 @@ class XYHstate():
 
 
     def rotate(self, angle):
+        '''
+        2D rotate <angle> radians around the origin.
+        '''
         c = cos(angle)
         s = sin(angle)
 
@@ -87,6 +90,10 @@ class XYHstate():
         return XYHstate(x,y,h)
 
     def wrt(self, origin):
+        '''
+        Returns the coordinates of this point with respect to a new origin.
+        Give coordinates of new origin w.r.t. current origin.
+        '''
         rotated = rotate(self, origin.h)
         translated = rotated - (origin.x, origin.y, 0)
         return translated
