@@ -17,7 +17,7 @@ import numpy as np
 from helpers import sign
 
 # Find SunFounder_PiCar submodule
-sys.path.append("../SunFounder_PiCar")
+sys.path.append("../lib/SunFounder_PiCar")
 import picar
 
 
