@@ -19,6 +19,7 @@ import argparse as ap
 # Add library folder to path
 sys.path.append("../lib")
 import helpers
+from my_picar import Picar as picar
 
 
 def main():
@@ -37,8 +38,10 @@ def main():
     parser.add_argument("--kdr", type=float, help="Derivative gain for rho.",       default=0)
     parser.add_argument("--kda", type=float, help="Derivative gain for alpha.",     default=0)
     parser.add_argument("--kdb", type=float, help="Derivative gain for beta.",      default=0)
-    parser.add_argument("--waypoints", type=string, help=".txt file of waypoints.") #@TODO
+    parser.add_argument("--waypoints", type=str, help=".txt file of waypoints.") #@TODO
     args = parser.parse_args()
+
+    print(args)
 
 
 
@@ -71,16 +74,13 @@ def main():
     else:
         # @TODO: READ IN WAYPOINT FILE
         # waypoints = args.waypoints
+        raise InputError("Waypoint file handling not implemented yet.")
 
-
-    if args.simulate:
-        from virtual_picar import Virtual_Picar as picar
-    else:
-        from my_picar import Picar as picar
 
     pc = picar(kpr=args.kpr, kpa=args.kpa, kpb=args.kpb, 
-               kir=args.kir, kia=args.kia, kib=args.kib, 
-               kdr=args.kdr, kda=args.kda, kdb=args.kdb, 
+               kir=args.kir, #kia=args.kia, kib=args.kib, 
+               kdr=args.kdr, #kda=args.kda, kdb=args.kdb, 
+               virtual=args.simulate
             ) #, loop_delay=0.001) deprecated
 
     pc.travel(waypoints)

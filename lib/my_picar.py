@@ -14,7 +14,7 @@ from time import sleep, monotonic
 from math import sin, cos, tan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
-from helpers import sign, angle_a2b
+from helpers import sign, angle_a2b, bound_angle
 from my_pid import PID
 
 # Find SunFounder_PiCar submodule
@@ -44,16 +44,27 @@ def BETA(s,g):
     return angle_a2b( a=rho[2], b=g[2] )
 
 
-# Magnitude only
 def dRHO(v,alpha):
+    '''
+    Calculates change in the MAGNITUDE ONLY of rho.
+    '''
     return -v*cos(alpha)
 
 def dALPHA(v,gamma,rho,alpha):
-    return angle_a2b(a=0, b=v*sin(alpha)/norm(rho[:2])) - gamma
+    return angle_a2b(a=gamma, b=v*sin(alpha)/norm(rho[:2]))
 
 def dBETA(v,rho,alpha):
-    return angle_a2b(a=0, b=-v*cos(alpha)/norm(rho[:2]))
+    return bound_angle(-v*cos(alpha)/norm(rho[:2]))
 
+
+def dX(v,h):
+    return v*cos(h)
+
+def dY(v,h):
+    return v*sin(h)
+
+def dTHETA(v,gamma,L):
+    return bound_angle(v*tan(gamma)/L)
 
 
 
@@ -67,73 +78,112 @@ class Picar:
     '''
     
     # @TODO: Clean up input parameters to the important ones; try to group Ks
-    def __init__(self, max_turn=45, speed=50, configfile="config", delay=0.005, L=0.145,
+    def __init__(self, max_turn=45, speed=50, configfile="config", L=0.145,
                     kpr=1, kpa=0, kpb=0, kdr=0, kir=0,
                     max_speed_world=0.4, max_turn_world=0.626,
-                    virtual=False):
+                    virtual=False, min_dt=0.005):
 
+        # Use virtual libraries if requested (so we don't get GPIO errors for not running on a Pi)
         if not virtual:
             import picar
             from picar.front_wheels import Front_Wheels
             from picar.back_wheels import Back_Wheels
             picar.setup()
         else:
-            import virtual_picar as picar
             from virtual_picar import Virtual_Front_Wheels as Front_Wheels
             from virtual_picar import Virtual_Back_Wheels as Back_Wheels
 
-        self.L = L
+        # Wheel base [m]
+        self.L = L        
 
-        self.config_file = configfile
+        # Wheel objects
         self.fw = Front_Wheels(db=configfile)
         self.bw = Back_Wheels(db=configfile)
         self.fw.max_turn = max_turn # [deg]  In picar's world; in reality 45 maps to around 40, etc
-        
-        self.speed = speed
-        self.turn_angle = 0
-
+        # Initialize wheels
+        self.speed = speed      # from 0-100
+        self.turn_angle = 0     # initalize at forward
         self.fw.ready()
         self.bw.ready()
         self.bw.forward()
 
-        self.delay = delay # [sec]
-
+        # PID controllers for parameters
         self.rhoPID = PID(Kp=kpr, Ki=kir, Kd=kdr)
         self.alphaPID = PID(Kp=kpa)
         self.betaPID = PID(Kp=kpb)
 
+        # Set maximum values of control signals
         self.MAX_SPEED = max_speed_world
         self.MAX_TURNING_ANGLE = max_turn_world
 
-        self.integral_rho = 0
-        self.last_rho = 0
+        # Minimum loop delay
+        self.min_dt = min_dt
 
 
+
+
+    ##############################################################
+    #               APPLY CALIBRATION MAPS
+    ##############################################################
 
     # Maps --> use calibration to map real world speed/angle to the control signals for the Picar motors
     # @TODO: Address 'kspeed' parameter
-    def map_speed(self, spd):
-        s = int(kspeed*spd)
-        return min(s,100)
+    def speed_world2picar(self, spd, m=215, b=0):
+        '''
+        Map real-world speed in meters-per-second to 0-100 picar speed based on calibration.
+        '''
+        spd = int(m*abs(spd) + b)
+        spd = min( max(spd,0), self.MAX_SPEED) # bound speed between 0 and MAX_SPEED
+        return spd
 
     # The reverse; go from control signal to real world
-    def inverse_map_speed(self,spd):
-        return spd/kspeed
+    def speed_picar2world(self, spd, m=215, b=0):
+        '''
+        Map picar 0-100 speed to real-world speed in meters-per-second based on calibration.
+        '''
+        return (spd+b)/m
 
-    def map_turn(self, angle):
-        angle = -angle * 180 / pi    # picar deals in degrees, and treats left (CCW) as negative
-        
-        # # Deal with offsets around 0
-        # if abs(angle) < 5:
-        #     return 0
-        # if abs(angle) < 10:
-        #     return angle
+    def turnangle_world2picar(self, angle, m_right=1, b_right=0, m_left=None, b_left=None):
+        '''
+        Map real-world turn-angle in radians to picar turn-angle in degrees based on calibration.
+        '''
+        ang = -angle * 180 / pi    # picar deals in degrees, and treats left (CCW) as negative
 
-        if angle > 0:
-            angle = max(min(int(angle*1.1),35),0)
+        if m_left is None:
+            m_left = m_right
+        if b_left is None:
+            b_left = b_right
+
+        # Turn right
+        if ang > 0:
+            ang = int(m_right*ang + b_right)
         else:
-            angle = max(int(angle*0.8), -35)
-        return int(angle)
+            ang = int(m_left*ang + b_left)
+
+        # bound angle between -max and +max
+        if abs(ang) > self.MAX_TURNING_ANGLE:
+            ang = sign(ang)*self.MAX_TURNING_ANGLE
+
+        return ang
+
+    def turnangle_picar2world(self, angle, m_right=1, b_right=0, m_left=None, b_left=None):
+        '''
+        Map picar turn-angle in degrees to real-world turn-angle in radians based on calibration.
+        '''
+        ang = -angle * pi / 180    # change to radians, and treat left turn (CCW) as positive
+
+        if m_left is None:
+            m_left = m_right
+        if b_left is None:
+            b_left = b_right
+
+        # Turn right
+        if ang > 0:
+            ang = int( (ang + b_right)/m_right )
+        else:
+            ang = int( (ang + b_left) /m_left )
+
+        return ang
 
 
     ##############################################################
@@ -151,7 +201,7 @@ class Picar:
             rho_sign = 1
         rho *= rho_sign
          
-        v = self.rhoPID.control(rho)
+        v = self.rhoPID.input(rho)
 
         # Don't go below 0
         v = max(v,0)
@@ -170,8 +220,8 @@ class Picar:
         if beta is None:
             beta = self.beta
 
-        a = self.alphaPID.control(alpha, dt=dt) 
-        b = self.betaPID .control(beta,  dt=dt)  
+        a = self.alphaPID.input(alpha, dt=dt) 
+        b = self.betaPID .input(beta,  dt=dt)  
         # gamma = rho*a + b+2*self.Kpb/rho -b*(self.last_rho-rho)
         gamma = a + b
         gamma = angle_a2b(a=0, b=gamma)
@@ -181,17 +231,36 @@ class Picar:
             gamma = sign(gamma)*self.MAX_TURNING_ANGLE
         return gamma
 
-    def dX(self,v,h):
-        return v*cos(h)
-
-    def dY(self,v,h):
-        return v*sin(h)
-
-    def dTHETA(self,v,gamma):
-        return angle_a2b(a=0, b=v*tan(gamma)/self.L)
+    
 
 
 
+    def print_status(self, dt=-1, t=-1, g=[0, 0, 0], dx=0, dy=0, dh=0):
+        print("\n-------------------------------------------------------") 
+        print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
+            self.s[0], self.s[1], self.s[2]*180/pi, t) )
+        print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
+            dx, dy, dh*180/pi, dt ) )
+        print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
+            self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
+        print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
+            dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
+            dBETA  (self.speed, self.rho, self.alpha) *180/pi,
+            self.rho[0], self.rho[1], 
+            self.rho[2] * 180/pi
+            ) )
+        print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
+            g[0],g[1],g[2]*180/pi) )
+        print()
+            
+
+    def print_errors(self, goal):
+        print("-------------------------------------------------------") 
+        print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
+            norm(self.rho[:2]), 
+            angle_a2b( self.s[2], goal[2]) * 180/pi)
+            )
+        print('\n')
 
 
     '''
@@ -200,6 +269,10 @@ class Picar:
     def travel(self, waypoints):
         breakflag = False
 
+
+        ##############################################################
+        #                       INITIALIZE
+        ##############################################################
         # Initialize world parameters
         self.s = waypoints[0]
         g = waypoints[1]
@@ -212,11 +285,15 @@ class Picar:
         self.alpha  = ALPHA(self.s,g)
         self.beta   = BETA (self.s,g)
 
+        # Initialize printable variables (so they don't cause errors when
+        #   the try-catch statement tries to catch and error and print out
+        #   variables that haven't been initialized yet in 'finally:')
+        # Initialize times
+        dt = self.min_dt
+        t = 0
+
         try:
-            #Initialize times
-            dt = self.delay
-            t = 0
-            mono_time = monotonic()
+            stopwatch = monotonic()
             
             # For each waypoint
             for i in range(len(waypoints)-1):
@@ -233,19 +310,23 @@ class Picar:
 
                     # Calculate controls
                     self.speed      = self.V (rho=norm(self.rho[:2]),dt=dt)
-                    control_speed   = self.map_speed(self.speed)
+                    control_speed   = self.speed_world2picar(self.speed)
                     self.turn_angle = self.GAMMA (self.alpha, self.beta,dt=dt)
+                    control_angle   = self.turnangle_world2picar(self.turn_angle)
 
                     # Send controls to hardware
-                    self.turn (     self.map_turn(self.turn_angle) )
-                    self.bw.speed = control_speed
-                    self.speed    = self.inverse_map_speed(control_speed) 
-                    sleep(self.delay)
+                    self.turn (       control_angle )
+                    self.bw.speed   = control_speed
+
+                    # Re-map controls to real world -> this will account for bounding
+                    #   the speed/angle to the picar's working range.
+                    self.speed      = self.speed_picar2world(control_speed)
+                    self.turn_angle = self.turnangle_picar2world(control_angle)
 
                     # Calculate change in world state
-                    dx      = self.dX(     self.speed, self.s[2] )
-                    dy      = self.dY(     self.speed, self.s[2] )
-                    dh  = self.dTHETA( self.speed, self.turn_angle )
+                    dx = dX(     self.speed, self.s[2] )
+                    dy = dY(     self.speed, self.s[2] )
+                    dh = dTHETA( self.speed, self.turn_angle, self.L )
 
                     # Update world state
                     self.s += np.array([dx, dy, dh])*dt
@@ -253,58 +334,26 @@ class Picar:
                     self.s[2] = angle_a2b(a=0, b=self.s[2])
 
                     # Update ego-centric state
-                    self.rho  = RHO(self.s,g)# Don't do this one it gets messed up with direction -> += dRHO  (v=self.speed, alpha=self.alpha) 
+                    self.rho    = RHO(self.s,g)# Don't do this one it gets messed up with direction -> += dRHO  (v=self.speed, alpha=self.alpha) 
                     self.alpha  = ALPHA(self.s,g)
                     self.beta   = BETA (self.s,g)
 
                     # Print status every half second
                     if t % 0.5 < dt:
-                        print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
-                            self.s[0], self.s[1], self.s[2]*180/pi, t) )
-                        print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                            dx, dy, dh*180/pi,dt ) )
-                        print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
-                            self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
-                        print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
-                            dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
-                            dBETA  (self.speed, self.rho, self.alpha) *180/pi,
-                            self.rho[0], self.rho[1], 
-                            self.rho[2] * 180/pi
-                            ) )
-                        print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
-                            g[0],g[1],g[2]*180/pi) )
-                        print()
+                        self.print_status(g=g,dx=dx,dy=dy,dh=dh)
 
                     # Timekeeping
-                    sleep(self.delay)
-                    dt = monotonic() - mono_time
-                    mono_time = mono_time + dt
+                    sleep(self.min_dt) # Wait for minimum loop time
+                    dt = monotonic() - stopwatch
+                    stopwatch = stopwatch + dt
                     t = t+dt
 
-                print("Goal reached, halting.")
+                # While loop concluded without error -- we are at the goal!
+                print("\n\nGoal reached, halting.")
                 print("-------------------------------------------------------") 
-
-                print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
-                    self.s[0], self.s[1], self.s[2]*180/pi, t) )
-                print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                    dx, dy, dh*180/pi,dt ) )
-                print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
-                    self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
-                print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
-                    dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
-                    dBETA  (self.speed, self.rho, self.alpha) *180/pi,
-                    self.rho[0], self.rho[1], 
-                    self.rho[2] * 180/pi
-                    ) )
-                print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
-                    g[0],g[1],g[2]*180/pi) )
-                print()
+                self.print_status(g=g,dx=dx,dy=dy,dh=dh)
                 print("-------------------------------------------------------") 
-                print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
-                    norm(self.rho[:2]), 
-                    angle_a2b( self.s[2], g[2]) * 180/pi)
-                    )
-                print('\n')
+                self.print_errors(g=g)
 
         # I can't remember why I needed this except clause but I think it didn't work right without it
         except Exception as e:
@@ -312,28 +361,7 @@ class Picar:
 
         # Print state and halt picar before exiting
         finally:
-            print("\n-------------------------------------------------------") 
-            print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
-                self.s[0], self.s[1], self.s[2]*180/pi, t) )
-            print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-                dx, dy, dh*180/pi,dt ) )
-            print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
-                self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
-            print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
-                dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
-                dBETA  (self.speed, self.rho, self.alpha) *180/pi,
-                self.rho[0], self.rho[1], 
-                self.rho[2] * 180/pi
-                ) )
-            print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
-                g[0],g[1],g[2]*180/pi) )
-            print()
-            print("-------------------------------------------------------") 
-            print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
-                norm(self.rho[:2]), 
-                angle_a2b( self.s[2], g[2]) * 180/pi)
-                )
-            print('\n')
+            self.print_status(g=g,dx=dx,dy=dy,dh=dh)
             self.halt()   
             sleep(0.01)
 

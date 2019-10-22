@@ -86,8 +86,14 @@ class PID():
         return self.Kd*d_error*self.dt
 
 
-    def control(self, error=0, dt=None):
+    def input(self, error=0, dt=None):
+        '''
+        Input an error signal and return a control signal.
+        '''
         if dt is None:
             dt = self.dt
 
         return self.P(error=error,dt=dt) + self.I(error=error,dt=dt) + self.D(error=error,dt=dt)
+
+
+        
