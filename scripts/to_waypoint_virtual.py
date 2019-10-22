@@ -14,11 +14,15 @@ from time import sleep
 from math import pi, atan2, sin, cos, tan
 import numpy as np
 from numpy.linalg import norm
+import argparse as ap
 
 # Add library folder to path
 sys.path.append("../lib")
 import helpers
 from my_picar import Picar
+
+
+
 
 
 
@@ -61,8 +65,8 @@ def main():
         Kir = float(sys.argv[5])
 
     pc = Picar(kpr=float(Kpr), kpa=float(Kpa), kpb=float(Kpb), 
-            kir=float(Kir), kdr=float(Kdr)
-            ) #, loop_delay=0.001) deprecated
+            kir=float(Kir), kdr=float(Kdr),
+            virtual=True) #, loop_delay=0.001) deprecated
 
     pc.travel(waypoints)
 

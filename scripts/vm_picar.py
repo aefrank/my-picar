@@ -1,6 +1,6 @@
 '''
-Filename: Picar.py
-Description: My implementation of the PiCar as a class.
+Filename: vm_picar.py
+Description: My implementation of the PiCar as a class FOR USE ON A VM.
 Author: Andi Frank
 E-mail: a2frank@eng.ucsd.edu
 Purpose: CSE 276A - Intro to Robotics; Fall 2019
@@ -15,10 +15,13 @@ from math import sin, cos, tan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
 from helpers import sign
+from virtual_wheels import Virtual_Front_Wheels as Front_Wheels
+from virtual_wheels import Virtual_Back_Wheels  as Back_Wheels
+
 
 # Find SunFounder_PiCar submodule
 sys.path.append("../lib/SunFounder_PiCar")
-import picar
+# import picar
 
 
 
@@ -154,22 +157,37 @@ def dBETA(v,rho,alpha):
 #                   PICAR CLASS
 ##############################################################
 
-class Picar:
+
+
+    # def halt(self, verbose=False):
+    #     self.stop()
+    #     self.turn_forward()
+    #     if verbose:
+    #         print("Wheels forward.")
+
+    
+
+class Virtual_Picar:
     '''
-    Class to represent Picar parameters and outputs.
+    Class to represent Virtual_Picar parameters and outputs.
     '''
     
     # @TODO: Clean up input parameters to the important ones; try to group Ks
     def __init__(self, max_turn=45, speed=50, configfile="config", delay=0.005, L=0.145,
                     kpr=1, kpa=0, kpb=0, kdr=0, kir=0,
                     max_speed_world=0.4, max_turn_world=0.626):
-        picar.setup()
+        
+        #picar.setup()
+        print("Picar setup.")
 
         self.L = L
 
         self.config_file = configfile
-        self.fw = picar.front_wheels.Front_Wheels(db=configfile)
-        self.bw = picar.back_wheels.Back_Wheels(db=configfile)
+        #self.fw = picar.front_wheels.Front_Wheels(db=configfile)
+        #self.bw = picar.back_wheels.Back_Wheels(db=configfile)
+        self.fw = Front_Wheels(db=configfile)
+        self.bw = Back_Wheels (db=configfile)
+
         self.fw.max_turn = max_turn # [deg]  In picar's world; in reality 45 maps to around 40, etc
         
         self.speed = speed
@@ -196,7 +214,7 @@ class Picar:
 
 
 
-    # Maps --> use calibration to map real world speed/angle to the control signals for the Picar motors
+    # Maps --> use calibration to map real world speed/angle to the control signals for the Virtual_Picar motors
     # @TODO: Address 'kspeed' parameter
     def map_speed(self, spd):
         s = int(kspeed*spd)
@@ -234,15 +252,8 @@ class Picar:
             rho_sign = 1
         rho *= rho_sign
          
-        v = P(self.Kpr, rho)
-        # I and D control
-        #+ I(ki=self.Kir, new_error=rho, integral=self.integral_rho, dt=dt) - min(0,D(kd=self.Kdr, error=rho, last_error=self.last_rho, dt=dt))
-        # self.integral_rho += rho
-        # self.last_rho = rho
-       
-        # Make speed dependent on directional errors, with alpha more important when rho is large and vice versa
-        # v += abs(self.Kpr*rho*self.alpha + self.Kpr/rho*self.beta)/100 # don't stop moving if these have huge errors -- but if they cancel, so be it
-        
+        v = self.Kpr*rho # @TODO: Integrate PID class
+
         # Don't go below 0
         v = max(v,0)
 
@@ -254,9 +265,10 @@ class Picar:
     # Change steering based on rho? e.g. if rho is changing quickly err toward alpha
     def GAMMA(self,alpha,beta,dt):
         rho = norm(self.rho[:2])
-        a = P(self.Kpa, alpha)
-        b = P(self.Kpb, beta)
+        a = self.Kpa*alpha # @TODO: Integrate PID class
+        b = self.Kpb*beta # @TODO: Integrate PID class
         # gamma = rho*a + b+2*self.Kpb/rho -b*(self.last_rho-rho)
+        gamma = a + b
         gamma = angle_a2b(a=0, b=gamma)
 
         # Stop at max
@@ -285,7 +297,7 @@ class Picar:
 
         # Initialize world parameters
         self.s = waypoints[0]
-        g = waypoints[start+1]
+        g = waypoints[1]
         dx=0
         dy=0
         dh=0
