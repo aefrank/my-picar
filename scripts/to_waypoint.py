@@ -41,7 +41,6 @@ def main():
     parser.add_argument("--waypoints", type=str, help=".txt file of waypoints.") #@TODO
     args = parser.parse_args()
 
-    print(args)
 
 
 
@@ -83,7 +82,7 @@ def main():
                virtual=args.simulate
             ) #, loop_delay=0.001) deprecated
 
-    pc.travel(waypoints)
+    pc.traverse(waypoints)
 
 
 if __name__=="__main__":

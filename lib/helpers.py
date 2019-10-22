@@ -16,8 +16,15 @@ def sign(n):
     else: # should only be in 0 case
         return 0
 
+def clip(x, xmin=0, xmax=None):
+    if x < xmin:
+        return xmin
+    if x > xmax:
+        return xmax
+    return x
 
-def bound_angle(theta):
+
+def shortest_rotation(theta):
     '''
     Bound angle to between [-pi, pi]
     '''
@@ -35,5 +42,5 @@ def angle_a2b(a,b):
     Credit:
     http://blog.lexique-du-net.com/index.php?post/Calculate-the-real-difference-between-two-angles-keeping-the-sign
     '''
-    return bound_angle(b-a)            
+    return shortest_rotation(b-a)            
     
