@@ -14,54 +14,73 @@ from time import sleep
 from math import pi, atan2, sin, cos, tan
 import numpy as np
 from numpy.linalg import norm
+import argparse as ap
 
 # Add library folder to path
 sys.path.append("../lib")
 import helpers
-from my_picar import Picar
-
 
 
 def main():
+
+    # Parse input arguments
+    parser = ap.ArgumentParser(description="Move Picar around waypoints.")
+    # parser.add_argument("-v", "--verbose", action="store_true", default=False) #@TODO
+    parser.add_argument("-s",  "--simulate", help="Use virtual_picar module to avoid errors from not running on RPi.", 
+                                                        action="store_true",    default=False)
+    parser.add_argument("--kpr", type=float, help="Proportional gain for rho.",     default=0)
+    parser.add_argument("--kpa", type=float, help="Proportional gain for alpha.",   default=0)
+    parser.add_argument("--kpb", type=float, help="Proportional gain for beta.",    default=0)
+    parser.add_argument("--kir", type=float, help="Integral gain for rho.",         default=0)
+    parser.add_argument("--kia", type=float, help="Integral gain for alpha.",       default=0)
+    parser.add_argument("--kib", type=float, help="Integral gain for beta.",        default=0)
+    parser.add_argument("--kdr", type=float, help="Derivative gain for rho.",       default=0)
+    parser.add_argument("--kda", type=float, help="Derivative gain for alpha.",     default=0)
+    parser.add_argument("--kdb", type=float, help="Derivative gain for beta.",      default=0)
+    parser.add_argument("--waypoints", type=string, help=".txt file of waypoints.") #@TODO
+    args = parser.parse_args()
+
+
+
     # Proportional gain
-    Kpr = 0
-    Kpa = 0
-    Kpb = 0
+    Kpr = args.kpr
+    Kpa = args.kpa
+    Kpb = args.kpb
 
     # Integral gain
-    Kir = 0
-    Kia = 0
-    Kib = 0
+    Kir = args.kir
+    Kia = args.kia
+    Kib = args.kib
 
     # Derivative gain
     Kdr = 0
     Kda = 0
     Kdb = 0
 
-    waypoints = np.asarray(
-                [ [      0,     0,      0],
-                  [     -1,     0,      0],
-                  [     -1,     1,   pi/2],
-                  [     -2,     1,      0],
-                  [     -2,     2,  -pi/2],
-                  [     -1,     1,  -pi/4],
-                  [     0,      0,      0]
-                ]
-            )
+    if args.waypoints is None:
+        waypoints = np.asarray(
+                    [ [      0,     0,      0],
+                      [     -1,     0,      0],
+                      [     -1,     1,   pi/2],
+                      [     -2,     1,      0],
+                      [     -2,     2,  -pi/2],
+                      [     -1,     1,  -pi/4],
+                      [     0,      0,      0]
+                    ]
+                )
+    else:
+        # @TODO: READ IN WAYPOINT FILE
+        # waypoints = args.waypoints
 
-    if len(sys.argv) > 1:
-        Kpr = float(sys.argv[1])
-    if len(sys.argv) > 2:
-        Kpa = float(sys.argv[2])
-    if len(sys.argv) > 3:
-        Kpb = float(sys.argv[3])
-    if len(sys.argv) > 4:
-        Kdr = float(sys.argv[4])
-    if len(sys.argv) > 5:
-        Kir = float(sys.argv[5])
 
-    pc = Picar(kpr=float(Kpr), kpa=float(Kpa), kpb=float(Kpb), 
-            kir=float(Kir), kdr=float(Kdr)
+    if args.simulate:
+        from virtual_picar import Virtual_Picar as picar
+    else:
+        from my_picar import Picar as picar
+
+    pc = picar(kpr=args.kpr, kpa=args.kpa, kpb=args.kpb, 
+               kir=args.kir, kia=args.kia, kib=args.kib, 
+               kdr=args.kdr, kda=args.kda, kdb=args.kdb, 
             ) #, loop_delay=0.001) deprecated
 
     pc.travel(waypoints)
