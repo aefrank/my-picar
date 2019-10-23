@@ -19,14 +19,14 @@ import argparse as ap
 # Add library folder to path
 sys.path.append("../lib")
 import helpers
-from my_picar import Picar as picar
+from my_picar2 import Picar as picar
 
 
 def main():
 
     # Parse input arguments
     parser = ap.ArgumentParser(description="Move Picar around waypoints.")
-    # parser.add_argument("-v", "--verbose", action="store_true", default=False) #@TODO
+    parser.add_argument("-v", "--verbose", action="store_true", default=False) #@TODO
     parser.add_argument("-s",  "--simulate", help="Use virtual_picar module to avoid errors from not running on RPi.", 
                                                         action="store_true",    default=False)
     parser.add_argument("--kpr", type=float, help="Proportional gain for rho.",     default=0)
@@ -79,7 +79,7 @@ def main():
     pc = picar(kpr=args.kpr, kpa=args.kpa, kpb=args.kpb, 
                kir=args.kir, #kia=args.kia, kib=args.kib, 
                kdr=args.kdr, #kda=args.kda, kdb=args.kdb, 
-               virtual=args.simulate
+               virtual=args.simulate, verbose=args.verbose
             ) #, loop_delay=0.001) deprecated
 
     pc.traverse(waypoints)

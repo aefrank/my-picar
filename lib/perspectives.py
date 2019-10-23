@@ -32,12 +32,13 @@ class WorldState():
     def __init__(self,x=0, y=0, h=0, xyh=None):
         if xyh is not None:
             self.x = xyh[0]
-            self.x = xyh[1]
-            self.x = xyh[2]
+            self.y = xyh[1]
+            self.h = xyh[2]
         else:
             self.x = x
             self.y = y
             self.h = h
+
 
     def __str__(self):
         return "WorldState: ({:.3f}, {:.3f}, {:.3f})".format(self.x, self.y, self.h)
@@ -68,6 +69,9 @@ class WorldState():
 
     def __neg__(self):
         return WorldState(-self.x, -self.y, -self.h)
+
+    def __mul__(self, k):
+        return WorldState(k*self.x, k*self.y, k*self.h)
 
 
 
@@ -113,7 +117,7 @@ class WorldState():
 
 
 
-class BicycleModelState():
+class BicycleModel():
     '''
     - Keep track of a relative state from the perspective of the robot and 
         allow easily readable access to (rho,alpha,beta).
@@ -136,18 +140,13 @@ class BicycleModelState():
             ws = WorldState(x,y,h)
 
         if rho is None: 
-            relative_ws = ws - robo_ws
-            rho = relative_ws.norm()
+            rho = BicycleModel.RHO(robo_ws,ws)
         
         if alpha is None:
-            if relative_ws is None:
-                relative_ws = ws - robo_ws
-            alpha = relative_ws.theta()
+            alpha = BicycleModel.ALPHA()
 
         if beta is None:
-            if relative_ws is None:
-                relative_ws = ws - robo_ws
-            beta = relative_ws.h - relative_ws.theta()
+            beta = BicycleModel.BETA()
         
 
         self.rho   = rho
@@ -156,12 +155,12 @@ class BicycleModelState():
 
 
     def __str__(self):
-        return "BicycleModelState: ({:.3f}, {:.3f}, {:.3f})".format(self.rho, self.alpha, self.beta)
+        return "BicycleModel: ({:.3f}, {:.3f}, {:.3f})".format(self.rho, self.alpha, self.beta)
 
     @classmethod
     def well_defined(cls, rho, alpha, beta, ws, x, y, h):
         '''
-        CHECK FOR UNDER- OR OVERDEFINED BicycleModelState SPECIFICATION:
+        CHECK FOR UNDER- OR OVERDEFINED BicycleModel SPECIFICATION:
             Check if given either
                 2) ALL three (rho,alpha,beta) AND also other arguments    [overdefined]
             or NOT ALL three (rho,alpha,beta) AND:
@@ -216,21 +215,55 @@ class BicycleModelState():
         sc = cls.well_defined(rho=rho, alpha=alpha, beta=beta, ws=ws,
                     x=x, y=y, h=h)
         if   (sc == 1):
-            raise InputError("BicycleModelState specification overdefined.")
+            raise InputError("BicycleModel specification overdefined.")
         elif (sc ==-1):
-            raise InputError("BicycleModelState specification underdefined.")
+            raise InputError("BicycleModel specification underdefined.")
+
+
+
+    # Bicycle model coordinates
+    @staticmethod 
+    def RHO(robot,goal):
+        '''
+        Magnitude of the vector from (robot location) to (goal location).
+        '''
+        difference = goal - robot
+        return difference.norm()
+
+    @staticmethod 
+    def ALPHA(robot,goal):
+        '''
+        Angle from the robot's heading to the vector from (robot location) to (goal location).
+        '''
+        difference = goal - robot
+        return under_pi(difference.theta())
+
+    @staticmethod 
+    def BETA(robot,goal): 
+        '''
+        Angle from the vector from (robot location) to (goal location) to the goal heading angle.
+        '''
+        difference = goal - robot
+        return angle_a2b(a=difference.theta, b=difference.h)
+
+    @staticmethod 
+    # Bicycle model coordinates
+    def dRHO(v,alpha):
+        return -v*cos(alpha)
+
+    @staticmethod 
+    def dALPHA(v,gamma,rho,alpha):
+        return angle_a2b(a=gamma, b=v*sin(alpha)/rho)
+
+    @staticmethod 
+    def dBETA(v,rho,alpha):
+        return under_pi(-v*cos(alpha)/rho)
 
 
     @staticmethod 
     def from_world(ws, robot_in_world_ref_frame=None):
         if robot_in_world_ref_frame is None:
             robot_in_world_ref_frame = WorldState(0,0,0)
-
-        # # Translate first, since our translation vector is in world coordinates
-        # translated = WorldState(ws.x-robot_in_world_ref_frame.x, ws.y-robot_in_world_ref_frame.y, ws.h)
-
-        # # Then rotate robot to heading=0
-        # rotated = translated.rotate(-robot_in_world_ref_frame.h)
 
         wrt_robot = ws.wrt(robot_in_world_ref_frame)
 
@@ -239,7 +272,7 @@ class BicycleModelState():
         alpha = wrt_robot.theta()
         beta  = wrt_robot.h
 
-        return BicycleModelState(rho=rho, alpha=alpha, beta=beta)
+        return BicycleModel(rho=rho, alpha=alpha, beta=beta)
 
 
 
@@ -278,8 +311,8 @@ def test():
 
     # print(Gw.wrt(Rw))
 
-    Rbm = BicycleModelState.from_world(Rw, robot_in_world_ref_frame=Rw)
-    Gbm = BicycleModelState.from_world(Gw, robot_in_world_ref_frame=Rw)
+    Rbm = BicycleModel.from_world(Rw, robot_in_world_ref_frame=Rw)
+    Gbm = BicycleModel.from_world(Gw, robot_in_world_ref_frame=Rw)
 
     print("World coords: {}\nBM coords: {}\n\n".format(Gw, Gbm))
 

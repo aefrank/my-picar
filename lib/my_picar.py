@@ -14,8 +14,9 @@ from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
-from helpers import sign, angle_a2b, shortest_rotation, clip
+from helpers import sign, angle_a2b, under_pi, clip
 from my_pid import PID
+from perspectives import WorldState, BicycleModel
 
 # Find SunFounder_PiCar submodule
 sys.path.append("../lib/SunFounder_PiCar")
@@ -30,42 +31,49 @@ kspeed = 215
 #                  PARAMETER FUNCTIONS
 ##############################################################
 
-def RHO(s,g):
-    # offset = (g-s).norm()
-    rho = g-s
-    rho[2] = atan2(rho[1],rho[0])
-    return rho
+# Bicycle model coordinates
+def RHO(robot,goal):
+    '''
+    Magnitude of the vector from (robot location) to (goal location).
+    '''
+    difference = goal - robot
+    return difference.norm()
 
-def ALPHA(s,g):
-    rho = RHO(s,g)
-    return angle_a2b( a=s[2], b=rho[2] )
+def ALPHA(robot,goal):
+    '''
+    Angle from the robot's heading to the vector from (robot location) to (goal location).
+    '''
+    difference = goal - robot
+    return under_pi(difference.theta())
 
-def BETA(s,g): 
-    rho = RHO(s,g)
-    return angle_a2b( a=rho[2], b=g[2] )
+def BETA(robot,goal): 
+    '''
+    Angle from the vector from (robot location) to (goal location) to the goal heading angle.
+    '''
+    difference = goal - robot
+    return angle_a2b(a=difference.theta, b=difference.h)
 
 
+# Bicycle model coordinates
 def dRHO(v,alpha):
-    '''
-    Calculates change in the MAGNITUDE ONLY of rho.
-    '''
     return -v*cos(alpha)
 
 def dALPHA(v,gamma,rho,alpha):
-    return angle_a2b(a=gamma, b=v*sin(alpha)/norm(rho[:2]))
+    return angle_a2b(a=gamma, b=v*sin(alpha)/rho)
 
 def dBETA(v,rho,alpha):
-    return shortest_rotation(-v*cos(alpha)/norm(rho[:2]))
+    return under_pi(-v*cos(alpha)/rho)
 
 
+# World Coordinates
 def dX(v,h):
     return v*cos(h)
 
 def dY(v,h):
     return v*sin(h)
 
-def dTHETA(v,gamma,L):
-    return shortest_rotation(v*tan(gamma)/L)
+def dH(v,gamma,L):
+    return under_pi(v*tan(gamma)/L)
 
 
 
@@ -121,6 +129,11 @@ class Picar:
 
         # Minimum loop delay
         self.min_dt = min_dt
+
+        # Initialize WorldState and BicycleModel
+        self.my_worldstate   = WorldState(0,0,0)
+        self.goal_worldstate = WorldState(0,0,0)
+        self.BM = BicycleModel(0,0,0)
 
 
 
@@ -190,14 +203,14 @@ class Picar:
 
 
     ##############################################################
-    #                    CALCULATE CONTROLS
+    #                    CONTROLS
     ##############################################################
 
     def get_drive_direction(self):
         # If alpha is greater than pi/2, it's easier to go backward
         # Inspired by code.py example from Homework 1.
         # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
-        if abs(self.alpha) > (pi/2.0 + 1e-4):
+        if abs(self.BM.alpha) > (pi/2.0 + 1e-4):
             # car should drive backward
             return -1
         else:
@@ -225,10 +238,8 @@ class Picar:
         '''
         Use PID control to calculate velocity.
         '''
-        rho = norm(self.rho)
-        v = self.rhoPID.input(rho)
+        v = self.rhoPID.input(self.BM.rho, dt=dt)
         # Bound from [0, MAX_PICAR_SPEED]
-        print(v)
         v = min(max(v,0), self.MAX_PICAR_SPEED)
         return v
 
@@ -237,8 +248,8 @@ class Picar:
         '''
         Use PID control to calculate turn angle.
         '''
-        a = self.alphaPID.input(self.alpha, dt=dt) 
-        b = self.betaPID .input(self.beta,  dt=dt)  
+        a = self.alphaPID.input(self.BM.alpha, dt=dt) 
+        b = self.betaPID .input(self.BM.beta,  dt=dt)  
 
         # Weighted change in angle = desired dh
         dh = a + b
@@ -260,9 +271,65 @@ class Picar:
         gamma = clip(gamma, -bound, bound)
 
         # Bound between [-pi, pi]
-        return shortest_rotation(gamma)
+        return under_pi(gamma)
 
     
+    def transmit_controls(self, speed, angle, direction=1):
+        self.set_drive_direction(direction)
+        self.turn(angle)
+        self.bw.speed = speed
+
+    
+    # def actual_controls(self, control_speed, control_angle):
+    #     '''
+    #     Based on the control signals actually output to the system (which may have differed
+    #     from the ideal ones due to hardware limitations), calculate the true control signals
+    #     to store for continued calculation.
+    #     '''
+    #     return self.speed_picar2world(control_speed), self.turnangle_picar2world(control_angle)
+
+    def calculate_controls(self, dt=1, adjust_inputs=False):
+        '''
+        Calculate speed and turn angle signals, but do not send to hardware.
+
+        NOTE: If adjust_inputs is set to True, we adjust self.speed and self.turn_angle
+        to account for any bounding/rounding to give a better estimate of the realworld
+        response of the picar.
+        '''
+        speed           = self.V (dt=dt)
+        control_speed   = self.speed_world2picar(speed)  
+        speed      = self.speed_picar2world(control_speed)
+
+        turn_angle      = self.GAMMA (v=speed, dt=dt)
+        control_angle   = self.turnangle_world2picar(turn_angle)
+
+        if adjust_inputs:
+            # Re-map controls to real world -> this will account for bounding
+            #   the speed/angle to the picar's working range.
+            self.speed = speed
+            self.turn_angle = self.turnangle_picar2world(control_angle)
+        
+        return control_speed, control_angle
+
+
+    def next_worldstate(self, old_worldstate=None, dt=1):
+        # If no old_worldstate input, take worldstate from parent object
+        if old_worldstate is None:
+            old_worldstate = self.my_worldstate
+
+        # Calculate change in world state
+        dx = dX( v=self.speed, h=old_worldstate.h )
+        dy = dY( v=self.speed, h=old_worldstate.h )
+        dh = dH( v=self.speed, gamma=self.turn_angle, L=self.L )
+
+        # Update world state
+        new_worldstate = old_worldstate + WorldState(xyh=[dx, dy, dh])*dt
+        # Keep h in [-pi, pi]
+        new_worldstate.h = under_pi(new_worldstate.h)
+
+        return new_worldstate
+
+
 
 
 
@@ -287,82 +354,68 @@ class Picar:
         #   variables that haven't been initialized yet in 'finally:')
 
         # Initialize world parameters
-        self.s = waypoints[0]
-        g = waypoints[1]
-        dx=0
-        dy=0
-        dh=0
-
-        # Initialize robot-centric reference
-        self.rho    = RHO  (self.s,g)
-        self.alpha  = ALPHA(self.s,g)
-        self.beta   = BETA (self.s,g)
-
+        self.my_worldstate   = WorldState(xyh=waypoints[0])
+        self.goal_worldstate = WorldState(xyh=waypoints[1])
         
         # Initialize times
         dt = self.min_dt
         t = 0
 
         ##############################################################
-        #                        CONTROL LOOP
+        #                  LOOP THROUGH WAYPOINTS
         ##############################################################
         try:
-            stopwatch = monotonic()
-            
             # For each waypoint
             for i in range(len(waypoints)-1):
-                self.rho    = RHO  (self.s,g)
-                self.alpha  = ALPHA(self.s,g)
-                self.beta   = BETA (self.s,g)
+
+                ##############################################################
+                #             INITIALIZE NEW GOAL POSE
+                ##############################################################
+
+                # OPTIONAL:
+                # Update initial my_worldstate to ideal location -- exactly at the last waypoint
+                #   You may want to comment this out to keep the model at the world state
+                #   of its last timestep on the previous goal loop.
+                self.my_worldstate = WorldState(xyh=waypoints[i]) 
+
+                # Record goal world state
+                self.goal_worldstate = WorldState(xyh=waypoints[i+1])
+
+                # Calculate initial BicycleModel state
+                self.BM = BicycleModel.from_world(self.goal_worldstate, self.my_worldstate)
                 
-                # Stop when close enough
-                while ( not (    norm(self.rho[:2])<0.1                 # within delta (10cm) of goal
-                            and  abs(angle_a2b(self.s[2],g[2])) < pi/6  # heading is almost correct
-                            )
-                        and not breakflag
+
+                ##############################################################
+                #                        CONTROL LOOP
+                ##############################################################
+
+                # Record start time
+                stopwatch = monotonic()
+                # Stop when close enough in terms of distance and heading
+                while ( 
+                        not ((self.BM.rho<0.1) and (abs(self.my_worldstate.h)<pi/6)) 
+                    and not breakflag
                     ):
 
-                    # Calculate controls
-                    speed           = self.V (dt=dt)
-                    control_speed   = self.speed_world2picar(speed)             
-                    # Re-map controls to real world -> this will account for bounding
-                    #   the speed/angle to the picar's working range.
-                    self.speed      = self.speed_picar2world(control_speed)
-
-                    turn_angle = self.GAMMA (v=self.speed, dt=dt)
-                    control_angle   = self.turnangle_world2picar(turn_angle)
-                    # Re-map controls to real world -> this will account for bounding
-                    #   the speed/angle to the picar's working range.
-                    self.turn_angle = self.turnangle_picar2world(control_angle)
-
-                    
-                    # Send controls to hardware
-                    self.set_drive_direction()
-                    self.turn (       control_angle )
-                    self.bw.speed   = control_speed
-
-                    # Re-map controls to real world -> this will account for bounding
-                    #   the speed/angle to the picar's working range.
-                    self.turn_angle = self.turnangle_picar2world(control_angle)
-
-                    # Calculate change in world state
-                    dx = dX(     self.speed, self.s[2] )
-                    dy = dY(     self.speed, self.s[2] )
-                    dh = dTHETA( self.speed, self.turn_angle, self.L )
+                    # Calculate controls from current BicycleModel state (rho,alpha,beta)
+                        # NOTE: With adjust_inputs=True, the calculate_controls() method also 
+                        # modifies the ideal self.speed and self.turn_angle to reflect any rounding,  
+                        # bounding to max value, etc. done as a result of transforming the ideal  
+                        # inputs to real-world control signal outputs.
+                    control_speed, control_angle = self.calculate_controls(dt=dt, adjust_inputs=True)
+                    # Send control signals to hardware
+                    self.transmit_controls(control_speed, control_angle)
 
                     # Update world state
-                    self.s += np.array([dx, dy, dh])*dt
-                    # Keep h in [-pi, pi]
-                    self.s[2] = angle_a2b(a=0, b=self.s[2])
+                    self.my_worldstate = self.next_worldstate(self.my_worldstate, dt=dt)
 
-                    # Update ego-centric state
-                    self.rho    = RHO(self.s,g)# Don't do this one it gets messed up with direction -> += dRHO  (v=self.speed, alpha=self.alpha) 
-                    self.alpha  = ALPHA(self.s,g)
-                    self.beta   = BETA (self.s,g)
+                    # Calculate new ego-centric state
+                    self.BM = BicycleModel.from_world(self.goal_worldstate,self.my_worldstate)
 
                     # If verbose, print status every half second
                     if self.verbose and t % 0.5 < dt:
-                        self.print_status(g=g,dx=dx,dy=dy,dh=dh)
+                        self.print_status(t=t, dt=dt, control_speed=control_speed, control_angle=control_angle)
+                        pass
 
                     # Timekeeping
                     sleep(self.min_dt) # Wait for minimum loop time
@@ -370,13 +423,24 @@ class Picar:
                     stopwatch = stopwatch + dt # Update stopwatch
                     t = t+dt # Update elapsed time since start of control loop
 
+
+
+                ##############################################################
+                #                        GOAL REACHED
+                ##############################################################
+
                 # while loop concluded without error -- we are at the goal!
                 if self.verbose:
                     print("\n\nGoal reached, halting.")
                     print("-------------------------------------------------------") 
-                    self.print_status(g=g,dx=dx,dy=dy,dh=dh)
+                    self.print_status(t=t, dt=dt, control_speed=control_speed, control_angle=control_angle)
                     print("-------------------------------------------------------") 
-                    self.print_errors(g=g)
+                    self.print_errors()
+
+
+        ##############################################################
+        #                       EXCEPTION HANDLING
+        ##############################################################
 
         # I can't remember why I needed this except clause but I think it didn't work right without it
         except Exception as e:
@@ -385,7 +449,8 @@ class Picar:
         # Print state and halt picar before exiting
         finally:
             if self.verbose:
-                self.print_status(g=g,dx=dx,dy=dy,dh=dh)
+                # self.print_status(g=g,dx=dx,dy=dy,dh=dh)
+                pass
             self.halt()   
             sleep(0.01)
 
@@ -435,36 +500,51 @@ class Picar:
         self.turn_straight()
 
 
-    def print_status(self, dt=-1, t=-1, g=[0, 0, 0], dx=0, dy=0, dh=0):
+    def print_status(self, t=-1, dt=-1, control_speed=-1, control_angle=-1):
+        '''
+        Print the values of current important state variables to monitor progress.
+        '''
         print("\n-------------------------------------------------------") 
-        print("World:  x: {:.2f}\ty: {:.2f}\tth: {:.2f}\tt: {:.3f}".format(
-            self.s[0], self.s[1], self.s[2]*180/pi, t) )
-        print("World:  dx: {:.2f}\tdy: {:.2f}\tdth: {:.2f}\tdt: {:.3f}".format(
-            dx, dy, dh*180/pi, dt ) )
-        print("Robot:  v: {:.2f}\tgam: {:.2f}\trho: {:.2f}\ta: {:.2f}\tb: {:.2f}".format(
-            self.speed, self.turn_angle*180/pi, norm(self.rho[:2]), self.alpha*180/pi, self.beta*180/pi) )
-        print("Robot:  da: {:.2f}\tdb: {:.2f}\tRHO: [{:.2f}, {:.2f}]\trho_angle: {:.2f}".format(
-            dALPHA (self.speed, self.turn_angle, self.rho, self.alpha) * 180/pi,
-            dBETA  (self.speed, self.rho, self.alpha) *180/pi,
-            self.rho[0], self.rho[1], 
-            self.rho[2] * 180/pi
-            ) )
-        print("Goal :  x: {:.4f}\ty: {:.4f}\tth: {:.4f}\t".format(
-            g[0],g[1],g[2]*180/pi) )
+        if (t != -1) or (dt != -1):
+            print("Time:\t\tt:   {:>6.2f}\tdt:  {:>2.6f}".format(t,dt))
+        print("Goal:\t\tx:   {:>6.2f}\ty:     {:>6.2f}\theading: {:>6.2f}\t".format(
+            self.goal_worldstate.x, self.goal_worldstate.y, self.goal_worldstate.h*180/pi) )
+        print("WorldState:\tx:   {:>6.2f}\ty:     {:>6.2f}\theading: {:>6.2f}".format(
+            self.my_worldstate.x, self.my_worldstate.y, self.my_worldstate.h*180/pi) )
+        print("BicycleModel:\trho: {:>6.2f}\talpha: {:>6.2f}\tbeta:    {:>6.2f}".format(
+            self.BM.rho, self.BM.alpha*180/pi, self.BM.beta*180/pi) )
+        print("World controls:\tv:   {:>6.2f}\tgamma: {:>6.2f}".format(self.speed, self.turn_angle))
+        print("Picar controls:\tv:   {:>6.2f}\tgamma: {:>6.2f}".format(control_speed, control_angle))
         print()
             
 
-    def print_errors(self, goal):
+    def print_errors(self):
+        '''
+        Print error from goal position and heading.
+        '''
         print("-------------------------------------------------------") 
         print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
-            norm(self.rho[:2]), 
-            angle_a2b( self.s[2], goal[2]) * 180/pi)
+            norm(self.BM.rho), 
+            angle_a2b( self.my_worldstate.h, self.goal_worldstate.h) * 180/pi)
             )
         print('\n')
 
 
 
+
+def test():
+    pc = Picar(verbose=True,virtual=True)
+    waypoints = np.array( [
+        [0,0,0],
+        [1,-1,-pi/2]
+        ])
+    pc.traverse(waypoints)
+
 if __name__=="__main__":
-    main()
+    test()
+
+
+
+
 
 

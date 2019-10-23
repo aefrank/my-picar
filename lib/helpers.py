@@ -24,7 +24,7 @@ def clip(x, xmin=0, xmax=None):
     return x
 
 
-def shortest_rotation(theta):
+def under_pi(theta):
     '''
     Bound angle to between [-pi, pi]
     '''
