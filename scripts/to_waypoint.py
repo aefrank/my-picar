@@ -19,7 +19,7 @@ import argparse as ap
 # Add library folder to path
 sys.path.append("../lib")
 import helpers
-from my_picar2 import Picar as picar
+from my_picar import Picar as picar
 
 
 def main():

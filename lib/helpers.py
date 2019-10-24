@@ -6,8 +6,36 @@ E-mail: a2frank@eng.ucsd.edu
 Purpose: Convenience
 '''
 
+##############################################################
+#                       IMPORTS
+##############################################################
+
 from math import pi, sin, cos, tan, atan2
 
+
+##############################################################
+#                       CUSTOM ERRORS
+##############################################################
+
+class InputError(Exception):
+    """Exception raised for errors in the input.
+
+    Attributes:
+        expression -- input expression in which the error occurred
+        message -- explanation of the error
+    """
+
+    def __init__(self,*args,**kwargs):
+        Exception.__init__(self,*args,**kwargs)
+
+    #def __init__(self, expression, message):
+    #    self.expression = expression
+    #    self.message = message
+
+
+##############################################################
+#                       MATH
+##############################################################
 def sign(n):
     if n > 0:
         return 1

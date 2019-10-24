@@ -1,6 +1,6 @@
 '''
-Filename: Picar.py
-Description: My implementation of the PiCar as a class.
+Filename: my_picar.py
+Description: Class and functions to represent a physical picar in the program.
 Author: Andi Frank
 E-mail: a2frank@eng.ucsd.edu
 Purpose: CSE 276A - Intro to Robotics; Fall 2019
@@ -9,6 +9,7 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 ##############################################################
 #                       IMPORTS
 ##############################################################
+
 import sys
 from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
@@ -23,7 +24,7 @@ sys.path.append("../lib/SunFounder_PiCar")
 
 
 
-kspeed = 215
+# kspeed = 215
 
 
 
@@ -101,8 +102,8 @@ class Picar:
             from picar.back_wheels import Back_Wheels
             picar.setup()
         else:
-            from virtual_picar import Virtual_Front_Wheels as Front_Wheels
-            from virtual_picar import Virtual_Back_Wheels as Back_Wheels
+            from virtual_wheels import Virtual_Front_Wheels as Front_Wheels
+            from virtual_wheels import Virtual_Back_Wheels as Back_Wheels
 
         # Wheel base [m]
         self.L = L        
@@ -504,11 +505,12 @@ class Picar:
         '''
         Print the values of current important state variables to monitor progress.
         '''
-        print("\n-------------------------------------------------------") 
+        print("\n----------------------------------------------------------------") 
         if (t != -1) or (dt != -1):
             print("Time:\t\tt:   {:>6.2f}\tdt:  {:>2.6f}".format(t,dt))
         print("Goal:\t\tx:   {:>6.2f}\ty:     {:>6.2f}\theading: {:>6.2f}\t".format(
             self.goal_worldstate.x, self.goal_worldstate.y, self.goal_worldstate.h*180/pi) )
+        print("--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --")
         print("WorldState:\tx:   {:>6.2f}\ty:     {:>6.2f}\theading: {:>6.2f}".format(
             self.my_worldstate.x, self.my_worldstate.y, self.my_worldstate.h*180/pi) )
         print("BicycleModel:\trho: {:>6.2f}\talpha: {:>6.2f}\tbeta:    {:>6.2f}".format(
@@ -522,7 +524,7 @@ class Picar:
         '''
         Print error from goal position and heading.
         '''
-        print("-------------------------------------------------------") 
+        print("----------------------------------------------------------------") 
         print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
             norm(self.BM.rho), 
             angle_a2b( self.my_worldstate.h, self.goal_worldstate.h) * 180/pi)
