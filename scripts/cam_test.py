@@ -86,6 +86,7 @@ def show_cam(camera=0, bw=False, mirrorlr=False, mirrorud=False, hsv=False, dete
                 # convert the image to grayscale
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 img = cv2.normalize(img,img,0,255,cv2.NORM_MINMAX)
+                img = cv2.addWeighted( img, 1.5, np.zeros(img.shape, img.dtype), 0, 0)
 
                 
                 if detect_region:
@@ -127,8 +128,8 @@ def show_cam(camera=0, bw=False, mirrorlr=False, mirrorud=False, hsv=False, dete
 
                     
                     # blur = cv2.GaussianBlur(img,(5,5),0)
-                    _, img = cv2.threshold(img,0,255,cv2.THRESH_OTSU)
-                    # _, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+                    # _, img = cv2.threshold(img,0,255,cv2.THRESH_OTSU)
+                    _, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
                     # _, img = cv2.threshold(img, img.mean()/2, 255, cv2.THRESH_TOZERO)
                     # _, img = cv2.threshold(img, 200, , cv2.THRESH_TOZERO_INV)
 
@@ -154,7 +155,7 @@ def show_cam(camera=0, bw=False, mirrorlr=False, mirrorud=False, hsv=False, dete
         cv2.destroyAllWindows()
 
 def main():
-    show_cam(camera=1, bw=True)
+    show_cam(camera=1)
 
 if __name__ == '__main__':
     main()
