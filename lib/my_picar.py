@@ -188,7 +188,10 @@ class Picar:
         else:
             raise InputError("Invalid units arg {}. units must be 'world' or 'picar'.".format(units))
         
-        self._turn_wheels(int(picar_turn))
+        if self._gamma != gamma:
+            self._turn_wheels(int(picar_turn))
+
+
 
     def set_speed(self, v, units="world"):
         direction = sign(v)
@@ -196,7 +199,8 @@ class Picar:
         if picar_speed > self.MAX_PICAR_SPEED:
             picar_speed = self.MAX_PICAR_SPEED
             v = self._picar_turn_to_gamma(picar_speed)
-        self._set_v(v*direction)
+        if self._v != v*direction:
+            self._set_v(v*direction)
 
 
     def drive(self, v, gamma=0):
