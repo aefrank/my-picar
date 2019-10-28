@@ -20,6 +20,7 @@ import numpy as np
 import imutils
 
 VERBOSE = True
+GOAL_WIDTH = 250
 
 # From calibration
 CAMERA_MATRIX = [	[668.26209391,  	 		0.,         299.10258721],
@@ -42,6 +43,7 @@ def preprocess(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     frame = cv2.normalize(frame,frame,0,255,cv2.NORM_MINMAX)
     frame = cv2.addWeighted( frame, 1.5, np.zeros(frame.shape, frame.dtype), 0, 0)
+    # _, frame = cv2.threshold(frame, 200, 255, cv2.THRESH_BINARY)
 
     return frame
 
@@ -99,6 +101,15 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 					print("Frame Center (x,y): ({},{})".format(frame_center_x,frame_center_y))
 					print("x error: {}".format(x_error))
 					picar.turn(x_error/frame_center_x*picar.MAX_PICAR_TURN, units='picar')
+
+					d_error = GOAL_WIDTH - qr.rect.width
+					speed = int(d_error/4)
+					if speed < 10:
+						speed = 0
+					picar.set_speed(speed, units='picar')
+					print("d error: {}".format(d_error))
+					print("Speed: {}".format(speed))
+					print()
 					
 
 
@@ -120,7 +131,7 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 
 
 def main():
-	pc = picar(virtual=True, virtual_verbose=True)
+	pc = picar(virtual=True, virtual_verbose=False)
 	to_qr(picar=pc, dev=1, verbose=VERBOSE)
 	
 

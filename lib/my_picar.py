@@ -191,9 +191,9 @@ class Picar:
         self._turn_wheels(int(picar_turn))
 
     def set_speed(self, v, units="world"):
-        direction = sign(speed)
+        direction = sign(v)
         picar_speed = self._v_to_picar_speed(abs(v))
-        if picar_speed > self.MAX_PICAR_v:
+        if picar_speed > self.MAX_PICAR_SPEED:
             picar_speed = self.MAX_PICAR_SPEED
             v = self._picar_turn_to_gamma(picar_speed)
         self._set_v(v*direction)
