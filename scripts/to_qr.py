@@ -6,7 +6,7 @@ E-mail: a2frank@eng.ucsd.edu
 Purpose: HW2, CSE 276A - Intro to Robotics; Fall 2019
 '''
 
-import sys
+import sys, time
 
 # Add library folder to path
 sys.path.append("../lib")
@@ -100,19 +100,21 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
                                         frame_center_x = frame.shape[1]/2
                                         frame_center_y = frame.shape[0]/2
                                         x_error = frame_center_x - qr_center_x
+                                        d_error = GOAL_WIDTH - qr.rect.width
+                                        if d_error < 120:
+                                            d_error = 0
+                                            at_goal = True
+                                            return at_goal
+                                        
                                         print("Frame Center (x,y): ({},{})".format(frame_center_x,frame_center_y))
                                         print("x error: {}".format(x_error))
-                                        turn = x_error/frame_center_x*picar.MAX_PICAR_TURN
-                                        turn *= 0.5
-                                        if turn < 10:
-                                            turn = 0
+                                        turn = -x_error/frame_center_x*picar.MAX_PICAR_TURN
+                                        turn *= 150/d_error
+                                        #if turn < 10:
+                                        #    turn = 0
                                         print("turn: {}".format(turn))
                                         picar.turn(turn, units='picar')
 
-                                        d_error = GOAL_WIDTH - qr.rect.width
-                                        if d_error < 100:
-                                            d_error = 0
-                                            at_goal = True
                                         speed = int(d_error/4)
                                         if speed < 10:
                                                 speed = 0
@@ -123,7 +125,7 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 
                                 else:
                                     no_qr_count += 1
-                                    if no_qr_count > 5:
+                                    if no_qr_count > 10:
                                         picar._stop_motors()
                                         
 
@@ -148,7 +150,27 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 
 def main():
         pc = picar(configfile="config")#virtual=True, virtual_verbose=False)
-        to_qr(picar=pc, dev=0, verbose=VERBOSE)
+        at_goal = to_qr(picar=pc, dev=0, verbose=VERBOSE)
+        if at_goal:
+            pc.halt()
+            time.sleep(1)
+            print("Goal reached!")
+        
+        
+        # Give me time to move QR code
+        time.sleep(10)
+
+        # Turn toward next QR Code
+        print("\nTurning left.")
+        pc.turn(-45, units='picar')
+        pc.set_speed(30, units='picar')
+        time.sleep(2.8)
+        pc.halt()
+
+        # Move to next QR code
+        at_goal = to_qr(picar=pc, dev=0, verbose=VERBOSE)
+        if at_goal:
+            print("Goal reached!")
         
 
 if __name__ == '__main__':
