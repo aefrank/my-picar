@@ -21,9 +21,17 @@ import imutils
 
 VERBOSE = True
 
+# From calibration
+CAMERA_MATRIX = [	[668.26209391,  	 		0.,         299.10258721],
+ 					[  0.,         	 646.96066863, 			231.98017084],
+ 					[  0.,           			0.,           		  1.]]
+# NEW_CAMERA_MATRIX, roi=cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
+DISTORTION = [[-0.48698219, -0.51573954,  0.01664705, -0.00720086,  2.29695665]]
+
+
 def print_qr(QR):
 	for qr in QR:
-		string = "{}\nROI:\t{}\nCenter\t({},{})".format(
+		string = "{}\nROI:\t\t{}\nCenter (x,y):\t({},{})".format(
 			qr.data.decode('UTF-8'), qr.rect, 
 			qr.rect.left+qr.rect.width/2, qr.rect.top-qr.rect.height/2)
 		print(string)
@@ -81,10 +89,17 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 					qr = qr[0]
 
 					
-					# Which direction is the QR code
-					qr_lr = qr.rect.left+qr.rect.width/2
-					direction = qr_lr - frame.shape[1]/2
-					print(direction)
+					# Get horizontal error
+					qr_center_x = qr.rect.left+qr.rect.width/2
+
+					# PID control
+					frame_center_x = frame.shape[1]/2
+					frame_center_y = frame.shape[0]/2
+					x_error = frame_center_x - qr_center_x
+					print("Frame Center (x,y): ({},{})".format(frame_center_x,frame_center_y))
+					print("x error: {}".format(x_error))
+					picar.turn(x_error/frame_center_x*picar.MAX_PICAR_TURN, units='picar')
+					
 
 
 
@@ -105,7 +120,7 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 
 
 def main():
-	pc = picar(virtual=True, verbose=True)
+	pc = picar(virtual=True, virtual_verbose=True)
 	to_qr(picar=pc, dev=1, verbose=VERBOSE)
 	
 

@@ -1,0 +1,10 @@
+Found 25 good images
+Image to undistort:  ./calibration/snapshot_640_480_8.jpg
+ROI:  11 17 611 452
+Calibrated picture saved as calibresult.png
+Calibration Matrix: 
+[[668.26209391   0.         299.10258721]
+ [  0.         646.96066863 231.98017084]
+ [  0.           0.           1.        ]]
+Disortion:  [[-0.48698219 -0.51573954  0.01664705 -0.00720086  2.29695665]]
+total error:  0.16312040526172816

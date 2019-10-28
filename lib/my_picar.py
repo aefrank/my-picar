@@ -31,6 +31,7 @@ sys.path.append("../lib/SunFounder_PiCar")
 ##############################################################
 #                  PARAMETER FUNCTIONS
 ##############################################################
+# @TODO: Most of these should be stowed away in perspectives.BicycleModel
 
 # Bicycle model coordinates
 def RHO(robot,goal):
@@ -176,15 +177,20 @@ class Picar:
 ###############################################################################
 ###############################################################################
 
-    def turn(self, gamma):
-        picar_turn = self._gamma_to_picar_turn(gamma)
-        if abs(picar_turn) > self.MAX_PICAR_TURN:
-            picar_turn = sign(picar_turn)*self.MAX_PICAR_TURN
-            gamma = self._picar_turn_to_gamma(picar_turn)
+    def turn(self, gamma, units="world"):
+        if units == "world":
+            picar_turn = self._gamma_to_picar_turn(gamma)
+            if abs(picar_turn) > self.MAX_PICAR_TURN:
+                picar_turn = sign(picar_turn)*self.MAX_PICAR_TURN
+                gamma = self._picar_turn_to_gamma(picar_turn)
+        elif units == "picar":
+            picar_turn = gamma
+        else:
+            raise InputError("Invalid units arg {}. units must be 'world' or 'picar'.".format(units))
         
-        self._turn_wheels(picar_turn)
+        self._turn_wheels(int(picar_turn))
 
-    def set_v(self, v):
+    def set_speed(self, v, units="world"):
         direction = sign(speed)
         picar_speed = self._v_to_picar_speed(abs(v))
         if picar_speed > self.MAX_PICAR_v:
