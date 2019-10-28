@@ -20,7 +20,7 @@ import numpy as np
 import imutils
 
 VERBOSE = True
-GOAL_WIDTH = 250
+GOAL_WIDTH = 150
 
 # From calibration
 CAMERA_MATRIX = [       [668.26209391,                          0.,         299.10258721],
@@ -57,6 +57,10 @@ def show(frame, mirrorlr=False, mirrorud=False):
     # Display frame
     cv2.imshow('PiCam view', frame)
 
+
+
+
+
 def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
         ''' 
         Drive Picar to a QR code and center it.
@@ -92,38 +96,42 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
                                                 print_qr(qr)
                                         qr = qr[0]
 
-                                        
-                                        # Get horizontal error
-                                        qr_center_x = qr.rect.left+qr.rect.width/2
-
-                                        # PID control
-                                        frame_center_x = frame.shape[1]/2
-                                        frame_center_y = frame.shape[0]/2
-                                        x_error = frame_center_x - qr_center_x
+                                        # If you are within 10 px of goal width, you've reached the goal
                                         d_error = GOAL_WIDTH - qr.rect.width
-                                        if d_error < 120:
+                                        if d_error < 10:
                                             d_error = 0
                                             at_goal = True
                                             return at_goal
+
+                                        # Get horizontal error
+                                        qr_center_x = qr.rect.left+qr.rect.width/2
+                                        frame_center_x = frame.shape[1]/2
+                                        frame_center_y = frame.shape[0]/2
+                                        x_error = frame_center_x - qr_center_x
                                         
-                                        print("Frame Center (x,y): ({},{})".format(frame_center_x,frame_center_y))
-                                        print("x error: {}".format(x_error))
+                                        
+                                        
                                         turn = -x_error/frame_center_x*picar.MAX_PICAR_TURN
                                         turn *= 150/d_error
                                         #if turn < 10:
                                         #    turn = 0
-                                        print("turn: {}".format(turn))
+                                        
                                         picar.turn(turn, units='picar')
 
                                         speed = int(d_error/4)
                                         if speed < 10:
                                                 speed = 0
                                         picar.set_speed(speed, units='picar')
+
+                                        print("Frame Center (x,y): ({},{})".format(frame_center_x,frame_center_y))
+                                        print("x error: {}".format(x_error))
+                                        print("Gamma: {}".format(turn))
                                         print("d error: {}".format(d_error))
                                         print("Speed: {}".format(speed))
                                         print()
 
                                 else:
+                                    # If you haven't seen a QR code for 10 loops, stop the car
                                     no_qr_count += 1
                                     if no_qr_count > 10:
                                         picar._stop_motors()
@@ -131,7 +139,7 @@ def to_qr(picar=None, dev=0, verbose=False, mirrorlr=False, mirrorud=False):
 
 
 
-
+                                # Don't show frame when on picar
                                 # Show frame
                                 # show(frame)
 

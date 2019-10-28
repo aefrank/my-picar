@@ -100,8 +100,8 @@ def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
 
 def should_i_back_up(alpha):
     # If alpha is greater than pi/2, it's easier to go backward
-    # Inspired by code.py example from Homework 1.
-    # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
+    # Inspired by code.pdf example from Homework 1.
+    # github.com/quanvuong/ucsd-cse276A/hw1/main.py
     if abs(alpha) > (pi/2 + 1e-4):
         return True
     else:
