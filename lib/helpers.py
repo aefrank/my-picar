@@ -52,9 +52,11 @@ def clip(x, xmin=0, xmax=None):
     return x
 
 
-def under_pi(theta):
+def within_pi(theta):
     '''
     Bound angle to between [-pi, pi]
+    Based off:     
+    http://blog.lexique-du-net.com/index.php?post/Calculate-the-real-difference-between-two-angles-keeping-the-sign
     '''
     while theta > pi:  
         theta = theta - 2*pi
@@ -66,9 +68,6 @@ def under_pi(theta):
 def angle_a2b(a,b):
     '''
     Shortest distance (angular) between two angles.
-    It will be in range [-pi, pi].
-    Credit:
-    http://blog.lexique-du-net.com/index.php?post/Calculate-the-real-difference-between-two-angles-keeping-the-sign
     '''
-    return shortest_rotation(b-a)            
+    return within_pi(b-a)            
     
