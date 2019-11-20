@@ -43,8 +43,16 @@ class CartesianPose():
         Angle of the vector from the origin to a CartesianPose, w.r.t. the world x-axis.
         Between -pi and pi.
         """
-        return atan2(cp.y, cp.x)
+        return atan2(self.y, self.x)
 
+    def wrt(self, new_origin_state):
+        return wrt(self, new_origin_state)
+
+    def norm(self):
+        return norm(self)
+
+    def rotate(self, angle):
+        return rotate(self, angle)
 
 
     #############################################

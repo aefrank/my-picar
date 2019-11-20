@@ -27,9 +27,9 @@ class BicyclePose():
     - Update (rho,alpha,beta) from v and gamma.
     '''
 
-    def __init__(self, rho=None, alpha=None, beta=None, goal_cartesian=None, 
+    def __init__(self,  rho=None, alpha=None, beta=None,  
                         x=None, y=None, h=None,
-                        robo_cartesian=None):
+                        goal_cartesian=None, robo_cartesian=None):
         '''
         Can initialize with a (rho,alpha,beta), from a cp.CartesianPose object,
             from an (x,y,h), or with a combination of the above that fully
@@ -41,10 +41,21 @@ class BicyclePose():
                             goal_cartesian=goal_cartesian,
                             x=x, y=y, h=h)
 
+        
+        if rho is not None:
+            self.rho = rho 
+        if alpha is not None:
+            self.alpha = alpha
+        if beta is not None:
+            self.beta = beta
+
         if robo_cartesian is None:
             robo_cartesian = cp.CartesianPose(0,0,0)
         if goal_cartesian is None:
-            goal_cartesian = cp.CartesianPose(x,y,h)
+            if x is None or y is None or h is None:
+                robo_cartesian = cp.CartesianPose(0,0,0)
+            else:
+                goal_cartesian = cp.CartesianPose(x,y,h)
         if rho is None: 
             rho   = RHO(robo_cartesian, goal_cartesian)
         if alpha is None:
@@ -68,10 +79,24 @@ class BicycleModelControllers():
 
 class BicycleModel():
 
-    def __init__(self, bicycle_pose, controllers, L=wheelbase):
+    def __init__(self, controllers=None, wheelbase=1, bicycle_pose=None, 
+                        rho=None, alpha=None, beta=None, 
+                ):
+        if bicycle_pose is None:
+            bicycle_pose = BicyclePose(rho=rho, alpha=alpha, beta=beta)
+
         self.pose = bicycle_pose
         self.controllers = controllers
         self.L = wheelbase
+
+    @staticmethod
+    def from_cartesian( x=None, y=None, h=None,
+                        goal_cartesian=None, 
+                        robo_cartesian=None):
+        bicycle_pose = BicyclePose(x=x, y=y, h=h,
+                               goal_cartesian=goal_cartesian, 
+                               robo_cartesian=robo_cartesian)
+        return BicycleModel(bicycle_pose)
 
     def update(self, dt=1):
         # Calculate controls from current BicycleModel state (rho,alpha,beta)
