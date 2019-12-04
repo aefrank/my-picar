@@ -1,0 +1,170 @@
+Picar organization
+------------------------------------------------------------------------------------------------------------------------------------------
+
+class PicarHardwareInterface: Handles sending signals to the hardware
+-Fields:
+	Wheels:			_fw					picar.front_wheels.Front_Wheels 					Used for sending control signals to front motor
+											OR 	virtual_wheels.Front_Wheels 		
+					_bw					picar.back_wheels.Back_Wheels 						Used for sending control signals to back motor
+											OR 	virtual_wheels.Back_Wheels 
+-Methods:
+	All the low level methods that are in Picar class rn
+
+
+
+
+class Picar:	Represents and organized the Picar robot specs, hardware interface, model, and current state. 
+				Handles ONLY what the Picar can know from its point-of-view. No knowledge of the world reference frame.
+- Fields:		
+	Hardware interface:		_hardware			PicarHardwareInterface 							
+
+	Physical Specs:			_L 					float 									[picar length], picar wheelbase (PICAR UNITS) <= 
+																								calculate from world via calibrated conversion
+							_MAX_STEER			int, [0,  90] 							[picar angle], max steer angle of Picar (PICAR UNITS)
+							_MAX_SPEED			int, [0, 100]							[picar speed], max allowable speed (PICAR UNITS)
+
+	Control State: 			_current_steer 		int, [-_MAX_STEER, MAX_STEER] 
+							_current_speed		int, [0, _MAX_SPEED]
+							_current_direction	int, {-1,0,1}
+							(_controller 		MyPicarController)?						(I think I'm going to have this external to the class)
+
+	Model:					_bicycle_model 		bicycle_model.BicycleModel
+							(_world_state 		cartesian_pose.CartesianPose)?			(Maybe it can keep track of this? Idk. If so, it should
+																							have PicarUnitConverter unit translator field)
+
+- Methods:
+	High level/user-facing methods from origin my_picar.Picar class
+	Wrapper methods for updating bicycle model
+
+
+
+
+class bicycle_model.BicycleModel:
+- Fields					
+	Pose 					current_pose 		BicyclePose 		
+- Methods:
+	Model: 					_dRHO_dt(speed, alpha)			(float, float) -> float	 					Calculate instantaneous drho/dt
+							_dALPHA_dt(speed, steer, 		(float,float,float,float) -> float 			Calculate instantaneous dalpha/dt
+										alpha, beta)
+							_dBETA_dt(speed,steer,	 		(float,float,float) -> float 				Calculate instantaneous dbeta/dt 	
+										    alpha)	
+	Update: 				_next_pose(current_pose 		(BicyclePose,float,float,float)				Calculate the next BicyclePose from
+										speed, steer,						-> BicyclePose 					speed, steering, and direction
+										direction, dt)														control signals and dt
+
+
+
+
+class MyPicarController: 	Calculate new control signals from Picar BicycleModel params and PID controllers
+- Fields: 				
+	Controllers:		rho_controller 			my_pid.PID
+						alpha_controller		my_pid.PID
+						beta_controller			my_pid.PID
+
+- Methods:
+	Calculate 			SPEED(rho_controller, rho)		(my_pid.PID, float, float) 			      	 [rho units per unit time]
+		Controls:		STEER(alpha_controller,  		(my_pid.PID, my_pid.PID, float, float)	 	 [alphabeta units]
+							  beta_controller,
+							  alpha, beta)	
+						DIRECTION(alpha) 				(float)	 									 [-1, 0, or 1]													
+																		
+
+
+UNBOUND METHODS -- Maybe put in MyPicarController
+control_loop(initial_pose, controller, loop_delay, end_condition):
+	Loop until end condition:
+	- Calculate SPEED and STEER controls from current pose
+	- Bound controls by hardware limitations
+	- Send control signals to hardware
+	- Update pose based on calculated controls 
+
+
+
+class PicarUnitConverter:
+- Fields:				
+	Parameter linear fits		_length_m 					Slope of linear fit for length     -> picar to world
+								_length_b 					Intercept of linear fit for length -> picar to world
+								_time_m	 					" " for time  " " (note: time has no constant param (i.e. b=0))
+								_angle_m 					" " for angle " "
+								_angle_b					" " for angle " "
+- Methods:
+	Units				length_picar2world()
+						  time_picar2world() 				How much time is one picar control loop
+						 angle_picar2world()
+						 speed_picar2world()				Derived from length and time conversion methods 		
+
+						length_world2picar()
+						  time_world2picar() 				How much time is one picar control loop
+						 angle_world2picar()
+						 speed_world2picar() 				Derived from length and time conversion methods
+
+
+	Poses 				NOTE: THESE SHOULD USE (?? I didn't finish my thought)
+						cartesian2bicycle()				(CartesianPose, CartesianPose) 		Calculate _bicycle_pose from current and 
+																		  -> BicyclePose			goal cartesian coordinates
+						goal_from_picar_cartesian()		(BicyclePose, CartesianPose) 		Calculate the goal CartesianPose from the
+																		-> CartesianPose 			BicyclePose and current CartesianPose
+																								
+						picar_from_goal_cartesian()		(BicyclePose, CartesianPose) 		Calculate the current CartesianPose from the
+																		-> CartesianPose 			Picar BicyclePose and goal CartesianPose
+
+
+class WorldFrame: 	Describes the environment from the world reference frame in cartesian coordinates in world units
+-Fields:
+	Picar:					picar_wheelbase		float 						- Picar wheelbase in world units
+
+	Picar Poses:			picar_pose 			CartesianPose 				- Current cartesian pose of picar
+							goal_pose 			CartesianPose 				- Goal cartesian pose of picar
+	
+	Environment: 			env 				Map 						- Map describing size and resolution of environment.
+	
+	QR Codes: 				codes 				list(CartesianPose) 		- Location and facing of QR codes
+
+-Methods:
+	Derivatives: 			dX(world_speed, cartesian_heading)
+							dY(world_speed, cartesian_heading)
+							dH(world_speed, world_steer, wheelbase) 		- Calculate change in heading of a bicycle model based on 
+																				front wheel steering
+
+	Update:					next_pose(picar_pose, world_speed,				- Calculate the next CartesianPose from the
+										world_steer, direction)					current pose, speed, steering, and direction 
+
+
+
+
+
+
+
+
+
+
+
+
+	Bicycle Model:			_cart2bicycle()		(CartesianPose, CartesianPose) -> BicyclePose 	Calculate _bicycle_pose from current and 
+																									goal cartesian coordinates
+							_goal_from_picar_cartesian()	(self.BicyclePose, CartesianPose) 	Calculate the goal CartesianPose from the
+																-> CartesianPose 					BicyclePose and current CartesianPose
+																									
+							_picar_from_goal_cartesian()	(self.BicyclePose, CartesianPose) 	Calculate the current CartesianPose from the
+																			-> CartesianPose 		Picar BicyclePose and goal CartesianPose
+	Bicycle Pose:			_bicycle_pose			bicycle_model.BicyclePose 				([picar speed*sec],[picar angle],[picar angle]), Current picar-goal pose 
+																									relationship in polar bicycle model coordinates (rho,alpha,beta) (PICAR UNITS)												
+	- Methods:
+	Derivatives:			_dRHO()					(float, float) -> float	 					Calculate drho from speed and alpha
+							_dALPHA()				(float,float,float,float) -> float 			Calculate dalpha from speed, steering angle, 
+																									alpha, and beta
+							_dBETA()				(float,float,float) -> float 				Calculate dbeta from speed, steering angle, 
+																									and alpha 		
+	Update: 				_update() 				(BicyclePose,float,float,float)				Calculate the next BicyclePose from the current 
+																	-> BicyclePose 					pose, speed and steering control signals, 
+																									and timestep 
+
+
+class PicarTranslator: Handles translation of Picar reference frame and World reference frame.
+- Fields:
+	Picar:				picar 						my_picar.Picar 								Picar object representing the physical Picar 
+																									robot
+	Cartesian Pose:		_picar_cartesian_pose		cartesian_pose.CartesianPose 				([m],[m],[deg]), Current Picar cartesian pose 
+																									(x,y,heading) in world reference frame
+						_goal_cartesian_pose		cartesian_pose.CartesianPose 				([m],[m],[deg]), Goal Picar cartesian pose 
+																									(x,y,heading) in world reference frame	

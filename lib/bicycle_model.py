@@ -68,26 +68,23 @@ class BicyclePose():
         self.beta  = beta
 
 
-class BicycleModelControllers():
-    '''
-    Class to hold PID controllers for Bicycle Model
-    '''
-    def __init__(self, rho_controller, alpha_controller, beta_controller):
-        self.rho   = rho_controller
-        self.alpha = alpha_controller
-        self.beta  = beta_controller
+# class BicycleModelControllers():
+#     '''
+#     Class to hold PID controllers for Bicycle Model
+#     '''
+#     def __init__(self, rho_controller, alpha_controller, beta_controller):
+#         self.rho   = rho_controller
+#         self.alpha = alpha_controller
+#         self.beta  = beta_controller
+
+
 
 class BicycleModel():
 
-    def __init__(self, controllers=None, wheelbase=1, bicycle_pose=None, 
-                        rho=None, alpha=None, beta=None, 
-                ):
+    def __init__(self, bicycle_pose=None,  rho=None, alpha=None, beta=None):
         if bicycle_pose is None:
             bicycle_pose = BicyclePose(rho=rho, alpha=alpha, beta=beta)
-
-        self.pose = bicycle_pose
-        self.controllers = controllers
-        self.L = wheelbase
+        self.current_pose = bicycle_pose
 
     @staticmethod
     def from_cartesian( x=None, y=None, h=None,
@@ -98,16 +95,14 @@ class BicycleModel():
                                robo_cartesian=robo_cartesian)
         return BicycleModel(bicycle_pose)
 
-    def update(self, dt=1):
-        # Calculate controls from current BicycleModel state (rho,alpha,beta)
-        v     = V(self.pose.rho, self.controllers.rho, dt)
-        gamma = GAMMA(  v, self.pose.alpha, self.pose.beta, 
-                        self.controllers.alpha, self.controllers.beta, 
-                        L, dt)
+    def next_pose(self, speed, steer, direction, dt, current_pose=None):
+        if current_pose==None:
+            current_pose = self.current_pose
+        drhodt   = dRHO_dt  (                       alpha=current_pose.alpha,   speed=speed,                direction=direction)
+        dalphadt = dALPHA_dt(rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed, steer=steer,   direction=direction)
+        dbetadt  = dBETA_dt (rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed,                direction=direction)
 
-        drho   = dRHO  (v=v, alpha=self.pose.alpha)
-        dalpha = dALPHA(v=v, gamma=gamma, rho=self.pose.rho, alpha=self.pose.alpha)
-        dbeta  = dBETA (v=v, rho=self.pose.rho, alpha=self.pose.alpha)
+        return current_pose + dt*BicyclePose(drhodt,dalphadt,dbetadt)
 
 
 
@@ -146,57 +141,66 @@ def BETA(robot,goal):
 
 ### Parameter Derivatives based on current parameter and control values
 
-def dRHO(v, alpha):
+def dRHO_dt(alpha, speed, direction=1):
+    v = sign(direction)*abs(speed)
     return -v*cos(alpha)
 
-def dALPHA(v, gamma, rho, alpha):
-    return within_pi(v*sin(alpha)/rho - gamma)
+def dALPHA_dt(rho, alpha, speed, steer, direction=1):
+    v = sign(direction)*abs(speed)
+    return within_pi(v*sin(alpha)/rho - steer)
 
-def dBETA(v, rho, alpha):
+def dBETA_dt(rho, alpha, speed, direction=1):
+    v = sign(direction)*abs(speed)
     return within_pi(-v*cos(alpha)/rho)
 
 
 
-##############################
-#     CALCULATE CONTROLS     #
-##############################
-
-def V(rho, rho_controller, dt=1):
-    '''
-    Calculate velocity at next timestep based on rho.
-    rho_controller must be a my_pid.PID object
-    '''
-    return rho_controller.input(rho, dt=dt)
 
 
-def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
-    '''
-    Calculate steering angle gamma at next timestep based on alpha and beta.
-    {alpha,beta}_controller must be a my_pid.PID object
-    '''
-    a = alpha_controller.input(alpha, dt=dt) 
-    b = beta_controller .input(beta,  dt=dt)  
 
-    # Desired change in heading angle
-    dh = a + b
-    omega = dh/dt
+# Not really a bicycle_model thing, more of a decision about how we wanted to
+# calculate controls BASED ON BicycleModel -- put in my_picar instead
+#
+# ##############################
+# #     CALCULATE CONTROLS     #
+# ##############################
 
-    # Calculate steering angle corresponding to angular velocity
-       # based on car geometry and linear velocity
-    gamma = atan(omega*L/v)
+# def V(rho, rho_controller, dt=1):
+#     '''
+#     Calculate velocity at next timestep based on rho.
+#     rho_controller must be a my_pid.PID object
+#     '''
+#     return rho_controller.input(rho, dt=dt)
 
-    # Bound between [-pi, pi]
-    return within_pi(gamma)
+
+# def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
+#     '''
+#     Calculate steering angle gamma at next timestep based on alpha and beta.
+#     {alpha,beta}_controller must be a my_pid.PID object
+#     '''
+#     a = alpha_controller.input(alpha, dt=dt) 
+#     b = beta_controller .input(beta,  dt=dt)  
+
+#     # Desired change in heading angle
+#     dh = a + b
+#     omega = dh/dt
+
+#     # Calculate steering angle corresponding to angular velocity
+#        # based on car geometry and linear velocity
+#     gamma = atan(omega*L/v)
+
+#     # Bound between [-pi, pi]
+#     return within_pi(gamma)
  
 
-def should_i_back_up(alpha):
-    # If alpha is greater than pi/2, it's easier to go backward
-    # Inspired by code.py example from Homework 1.
-    # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
-    if abs(alpha) > (pi/2 + 1e-4):
-        return True
-    else:
-        return False
+# def should_i_back_up(alpha):
+#     # If alpha is greater than pi/2, it's easier to go backward
+#     # Inspired by code.py example from Homework 1.
+#     # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
+#     if abs(alpha) > (pi/2 + 1e-4):
+#         return True
+#     else:
+#         return False
 
 
 
