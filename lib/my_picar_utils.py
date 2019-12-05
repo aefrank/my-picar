@@ -16,11 +16,13 @@ from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
+
+# My libraries
 from helpers import sign, angle_a2b, within_pi, clip
 from my_pid import myPID
-import perspectives 
 from cartesian_pose import CartesianPose
-from bicycle_model import BicyclePose, BicycleModel
+from bicycle_model import BicyclePose, BicycleModel, dHdt, dXdt, dYdt
+from costmap import Rect, Map
 
 # Find SunFounder_PiCar submodule
 sys.path.append("../lib/SunFounder_PiCar")
@@ -187,13 +189,13 @@ def test_MyPicarController():
 
 class PicarUnitConverter():
     '''
-    Handle conversions between world units and picar units. ASSUMES LINEAR RELATIONSHIPS.
+    Handle conversions between world units and picar internal units. ASSUMES LINEAR RELATIONSHIPS.
     '''
     def __init__(self, speed_slope, angle_slope, time_slope=1, speed_intercept=0, angle_intercept=0):
         '''
         World = m*Picar + b
         '''
-        self.world_speed_scale  = speed_slope       # [picar_time_unit/picar_length_unit * m/s] (i.e. (world speed units)/(picar speed units))
+        self.world_speed_scale  = speed_slope       # [m/s / picar_speed_unit] (i.e. (world speed units)/(picar speed units))
         self.world_angle_scale  = angle_slope       # [deg/picar_angle_unit]
         self.world_time_scale   = time_slope        # [sec/picar_time_unit]     (most likely picar_time_unit will be sec)
         self.world_speed_offset = speed_intercept   # [m/s]
@@ -209,38 +211,98 @@ class PicarUnitConverter():
     def time_picar2world(self, picar_time):
         return self.world_time_scale*picar_time     # [sec]
 
-    def length_picar2world(self, picar_length):     # [m]
-        '''
-        [world length units]    = [world speed units]                 *      [world_time_units]
-                                = speed_picar2world(picar_speed)      *      time_picar2world(1)
-                                = speed_picar2world(picar_length/1)   *      time_picar2world(1)
-                                = speed_picar2world(picar_length)     *      self.time_scale
-        '''
-        return speed_picar2world(picar_length) * self.time_scale
-
-
     def speed_world2picar(self, world_speed):
         return (world_speed - self.world_speed_offset)/self.world_speed_scale   # [picar speed units] 
                                                                                 # (i.e. [picar length units/picar time units])
-     
     def angle_world2picar(self, world_angle):
         return (world_angle - self.world_angle_offset)/self.world_angle_scale   # [picar angle units] 
 
     def time_world2picar(self, world_time):
         return world_time/self.world_time_scale                                 # [picar time units]
 
-    def length_world2picar(self, world_length):
-        return speed_world2picar(world_length) / self.time_scale                # [picar length units]
+def test_PicarUnitConverter():
+    X = [-1, -5.6, 7, 92.3]
+    uc = PicarUnitConverter(speed_slope=3, angle_slope=4, time_slope=1, 
+                                speed_intercept=0, angle_intercept=0)
+    for x in X:
+        uc.angle_picar2world(x)
+        uc.time_picar2world(x)
+        uc.speed_picar2world(x)
+        uc.angle_picar2world(x)
+        uc.time_picar2world(x)
+        uc.speed_picar2world(x)
 
-    
-    # @TODO: Pose transformations
+
+class MyWorldFrame():
+    '''
+    Specifically for Picar operation environments in CSE 276A.
+    Describes the picar pose, goal pose, environment, etc. from the world reference frame 
+        in cartesian coordinates in world units. 
+    Assumes a rectangular environment.
+    '''
+
+    def __init__(self,  xlim=None, ylim=None, 
+                        obstacles=None, obstacle_val=1, resolution=1, costmap=None,
+                        picar_pose=CartesianPose(0,0,0), goal_pose=CartesianPose(0,0,0), waypoints=None,
+                        picar_wheelbase=0.14, qr_codes=None):
+        '''
+        @TODO: Environment stuff (lims, costmap, obstacles, etc.) yet to be implemented -- just placeholder arguments for now.
+        '''
+        if xlim is None:
+            xlim = [0,10]
+
+        if ylim is None:
+            ylim = xlim     # Default to square map
+        
+        if costmap is None:
+            costmap = Map(origin=[0,0], xlim=xlim, ylim=ylim,
+                          resolution=resolution, fill=0)
+        if obstacles is not None:
+            for obs in obstacles: # obstacles should be a list of Rects
+                costmap.fill_rect(obs, fill=obstacle_val)
+
+        if waypoints is None:
+            waypoints = [goal_pose]
+
+        self.xlim = xlim
+        self.ylim = ylim
+        self.costmap    = costmap
+        self.obstacles  = obstacles
+        self.qr_codes   = qr_codes
+        self.picar_pose = picar_pose
+        self.goal_pose  = goal_pose
+        self.waypoints  = waypoints
+        self.picar_wheelbase = picar_wheelbase
 
 
+    def next_picar_pose(self, speed, steer, direction, dt, picar_pose=None):
+        if picar_pose is None:
+            picar_pose = self.picar_pose
+        dx = dXdt(speed=speed, heading=picar_pose.h, direction=direction)*dt
+        dy = dYdt(speed=speed, heading=picar_pose.h, direction=direction)*dt
+        dh = dHdt(speed=speed, steer=steer, direction=direction, L=self.picar_wheelbase)*dt
+        return picar_pose + CartesianPose(dx,dy,dh)
+
+
+
+
+        
+
+
+def test_MyWorldFrame():
+    wf = MyWorldFrame()
+    dt = 0.1
+    T = 1
+    for dt in range(int(T/dt)):
+        wf.picar_pose = wf.next_picar_pose(velocity=0.5, steer_angle=pi/4, dt=dt, picar_pose=wf.picar_pose)
+        print(wf.picar_pose)
 
 
 def main():
     # test_PicarHardwareInterface()
-    test_MyPicarController()
+    # test_MyPicarController()
+    # test_PicarUnitConverter()
+    test_MyWorldFrame()
 
 
 if __name__ == "__main__":

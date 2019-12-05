@@ -99,14 +99,18 @@ class PicarUnitConverter:
 						 speed_world2picar() 				Derived from length and time conversion methods
 
 
-	Poses 				NOTE: THESE SHOULD USE (?? I didn't finish my thought)
-						cartesian2bicycle()				(CartesianPose, CartesianPose) 		Calculate _bicycle_pose from current and 
-																		  -> BicyclePose			goal cartesian coordinates
-						goal_from_picar_cartesian()		(BicyclePose, CartesianPose) 		Calculate the goal CartesianPose from the
-																		-> CartesianPose 			BicyclePose and current CartesianPose
-																								
-						picar_from_goal_cartesian()		(BicyclePose, CartesianPose) 		Calculate the current CartesianPose from the
-																		-> CartesianPose 			Picar BicyclePose and goal CartesianPose
+
+    def length_picar2world(self, picar_length):     # [m]
+        '''
+        [world length units]    = [world speed units]                 *      [world_time_units]
+                                = speed_picar2world(picar_speed)      *      time_picar2world(1)
+                                = speed_picar2world(picar_length/1)   *      time_picar2world(1)
+                                = speed_picar2world(picar_length)     *      self.time_scale
+        '''
+        return speed_picar2world(picar_length) * self.time_scale
+
+
+
 
 
 class WorldFrame: 	Describes the environment from the world reference frame in cartesian coordinates in world units
@@ -138,9 +142,10 @@ class WorldFrame: 	Describes the environment from the world reference frame in c
 
 
 
+########################
+Scratch notes; functionality implemented in perspectives.py and bicycle_model.py
 
-
-	Bicycle Model:			_cart2bicycle()		(CartesianPose, CartesianPose) -> BicyclePose 	Calculate _bicycle_pose from current and 
+Bicycle Model:			_cart2bicycle()		(CartesianPose, CartesianPose) -> BicyclePose 	Calculate _bicycle_pose from current and 
 																									goal cartesian coordinates
 							_goal_from_picar_cartesian()	(self.BicyclePose, CartesianPose) 	Calculate the goal CartesianPose from the
 																-> CartesianPose 					BicyclePose and current CartesianPose
