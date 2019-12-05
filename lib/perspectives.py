@@ -26,52 +26,46 @@ import bicycle_model as bike
 #       Going btw bike.BicyclePose and cart.CartesianPose objects      #
 #################################################################
 
-def bicycle_to_cartesian(bp, robot_in_cartesian_ref_frame=None):
+
+def cartesian_to_bicycle(robot_cartesian, goal_cartesian):
     '''
-    Calculate the cartesian coordinates of the goal point
+    Calculate BicyclePose representation from CartesianPoses robot_cartesian and goal_cartesian.
     '''
-    if robot_in_cartesian_ref_frame is None:
-        robot_in_cartesian_ref_frame = cart.CartesianPose(0,0,0)
+    diff = goal_cartesian - robot_cartesian
+    rho  = diff.norm()
+    rho_angle = diff.theta()
+    alpha = rho_angle - robot_cartesian.h
+    beta  = goal_cartesian.h - rho_angle
+    return bike.BicyclePose(rho,alpha,beta)
 
-    # Find (x,y,h) coordinates w.r.t. robot
-    goal_x_in_robot_ref_frame = bp.rho * cos(bp.alpha) 
-    goal_y_in_robot_ref_frame = bp.rho * sin(bp.alpha) 
-    goal_h_in_robot_ref_frame = bp.alpha - bp.beta
-
-
-    goal_in_robot_ref_frame = cart.CartesianPose(goal_x_in_robot_ref_frame,
-                                            goal_y_in_robot_ref_frame,
-                                            goal_h_in_robot_ref_frame)
-
-    # Rotate point along with robot back to correct heading while we are in robot ref frame
-    goal_rotated = goal_in_robot_ref_frame.rotate(robot_in_cartesian_ref_frame.h)
-
-    # Now that our translation and cartesian axes are aligned, we can translate to our cartesian position
-    translation_vector = copy.copy(robot_in_cartesian_ref_frame)
-    translation_vector.h = 0
-    goal = goal_rotated + translation_vector
-
-    return goal
-
-
-def cartesian_to_bicycle(goal, robot_in_cartesian_ref_frame=None):
+def bicycle2robot(bicycle_pose, goal_cartesian):
     '''
-    Calculate the bike.BicycleModel given a goal cart.CartesianPose
+    Calculate robot_cartesian from bicycle model and goal_cartesian
     '''
-    if robot_in_cartesian_ref_frame is None:
-        robot_in_cartesian_ref_frame = cart.CartesianPose(0,0,0)
+    # If bicycle_pose is a BicycleModel object, extract BicyclePose
+    if isinstance(bicycle_pose, bike.BicycleModel):
+        bicycle_pose = bike.BicycleModel.current_pose
 
-    goal_wrt_robot = goal.wrt(robot_in_cartesian_ref_frame)
+    picar_x = goal_cartesian.x - bicycle_pose.rho * cos(goal_cartesian.h - bicycle_pose.beta)
+    picar_y = goal_cartesian.y - bicycle_pose.rho * sin(goal_cartesian.h - bicycle_pose.beta)
+    picar_h = goal_cartesian.h - bicycle_pose.beta - bicycle_pose.alpha
+    return cart.CartesianPose(picar_x, picar_y, picar_h)
 
-    # Now get rho, alpha, beta
-    rho   = goal_wrt_robot.norm()
-    alpha = goal_wrt_robot.theta()
-    beta  = goal_wrt_robot.h
+def bicycle2goal(bicycle_pose, robot_cartesian):
+    '''
+    Calculate goal_cartesian from bicycle model and robot_cartesian
+    '''
+    # If bicycle_pose is a BicycleModel object, extract BicyclePose
+    if isinstance(bicycle_pose, bike.BicycleModel):
+        bicycle_pose = bike.BicycleModel.current_pose
 
-    return bike.BicyclePose(rho=rho, alpha=alpha, beta=beta)
+    goal_x = robot_cartesian.x + bicycle_pose.rho * cos(robot_cartesian.h + bicycle_pose.alpha)
+    goal_y = robot_cartesian.y + bicycle_pose.rho * sin(robot_cartesian.h + bicycle_pose.alpha)
+    goal_h = robot_cartesian.h + bicycle_pose.alpha + bicycle_pose.beta
+    return cart.CartesianPose(goal_x, goal_y, goal_h) 
+                
 
 
-    
 
     
 def test():

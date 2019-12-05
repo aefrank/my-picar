@@ -68,6 +68,9 @@ class BicyclePose():
         self.beta  = beta
 
 
+    def __str__(self):
+        return "BicyclePose: ({:>6.3f}, {:>6.3f}, {:>6.3f})".format(self.rho, self.alpha, self.beta)
+
 # class BicycleModelControllers():
 #     '''
 #     Class to hold PID controllers for Bicycle Model
@@ -81,10 +84,11 @@ class BicyclePose():
 
 class BicycleModel():
 
-    def __init__(self, bicycle_pose=None,  rho=None, alpha=None, beta=None):
+    def __init__(self, bicycle_pose=None, rho=None, alpha=None, beta=None, L=1):
         if bicycle_pose is None:
             bicycle_pose = BicyclePose(rho=rho, alpha=alpha, beta=beta)
         self.current_pose = bicycle_pose
+        self.L = L
 
     @staticmethod
     def from_cartesian( x=None, y=None, h=None,
@@ -98,9 +102,9 @@ class BicycleModel():
     def next_pose(self, speed, steer, direction, dt, current_pose=None):
         if current_pose==None:
             current_pose = self.current_pose
-        drhodt   = dRHO_dt  (                       alpha=current_pose.alpha,   speed=speed,                direction=direction)
-        dalphadt = dALPHA_dt(rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed, steer=steer,   direction=direction)
-        dbetadt  = dBETA_dt (rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed,                direction=direction)
+        drhodt   = dRHOdt  (                       alpha=current_pose.alpha,   speed=speed,                direction=direction)
+        dalphadt = dALPHAdt(rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed, steer=steer,   direction=direction)
+        dbetadt  = dBETAdt (rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed,                direction=direction)
 
         return current_pose + dt*BicyclePose(drhodt,dalphadt,dbetadt)
 
@@ -139,23 +143,35 @@ def BETA(robot,goal):
     return angle_a2b(a=difference.theta, b=difference.h)
 
 
-### Parameter Derivatives based on current parameter and control values
+### BicyclePose Derivatives based on current parameter and control values
 
-def dRHO_dt(alpha, speed, direction=1):
+def dRHOdt(alpha, speed, direction=1):
     v = sign(direction)*abs(speed)
     return -v*cos(alpha)
 
-def dALPHA_dt(rho, alpha, speed, steer, direction=1):
+def dALPHAdt(rho, alpha, speed, steer, direction=1):
     v = sign(direction)*abs(speed)
     return within_pi(v*sin(alpha)/rho - steer)
 
-def dBETA_dt(rho, alpha, speed, direction=1):
+def dBETAdt(rho, alpha, speed, direction=1):
     v = sign(direction)*abs(speed)
     return within_pi(-v*cos(alpha)/rho)
 
 
 
+### CartesianPose Derivatives based on current parameter and control values for Picar
 
+def dHdt(speed, steer, L, direction=1):
+    v = sign(direction)*abs(speed)
+    return within_pi(v*tan(steer_angle)/L) 
+
+def dXdt(speed, heading, direction=1):
+    v = sign(direction)*abs(speed)
+    return speed*cos(heading)
+
+def dYdt(speed, heading, direction=1):
+    v = sign(direction)*abs(speed)
+    return speed*sin(heading)
 
 
 # Not really a bicycle_model thing, more of a decision about how we wanted to

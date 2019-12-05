@@ -60,13 +60,13 @@ class CartesianPose():
     #############################################
 
     def __str__(self):
-        return "CartesianPose: ({:.3f}, {:.3f}, {:.3f})".format(self.x, self.y, self.h)
+        return "CartesianPose: ({:>6.3f}, {:>6.3f}, {:>6.3f})".format(self.x, self.y, self.h)
 
     def __add__(self, cp):
-        return CartesianPose (self.x+cp.x, self.y+cp.y, self.h+cp.h)
+        return CartesianPose (self.x+cp.x, self.y+cp.y, within_pi(self.h+cp.h))
 
     def __radd__(self, cp):
-        return CartesianPose (self.x+cp.x, self.y+cp.y, self.h+cp.h)
+        return CartesianPose (self.x+cp.x, self.y+cp.y, within_pi(self.h+cp.h))
 
     def __iadd__(self, cp):
         self.x = self.x+cp.x
@@ -75,10 +75,10 @@ class CartesianPose():
         return self
 
     def __rsub__(self, cp):
-        return CartesianPose (self.x-cp.x, self.y-cp.y, self.h-cp.h)
+        return CartesianPose (self.x-cp.x, self.y-cp.y, within_pi(self.h-cp.h))
 
     def __sub__(self, cp):
-        return CartesianPose (self.x-cp.x, self.y-cp.y, self.h-cp.h)
+        return CartesianPose (self.x-cp.x, self.y-cp.y, within_pi(self.h-cp.h))
 
     def __isub__(self, cp):
         self.x = self.x-cp.x
@@ -90,7 +90,7 @@ class CartesianPose():
         return CartesianPose(-self.x, -self.y, -self.h)
 
     def __mul__(self, k):
-        return CartesianPose(k*self.x, k*self.y, k*self.h)
+        return CartesianPose(k*self.x, k*self.y, within_pi(k*self.h))
 
     
 
@@ -112,7 +112,7 @@ def rotate(cp, angle):
 
     x = cp.x*c - cp.y*s
     y = cp.x*s + cp.y*c
-    h = cp.h + angle
+    h = within_pi(cp.h + angle)
 
     return CartesianPose(x,y,h)
 
@@ -127,3 +127,4 @@ def wrt(cp, new_origin_state):
     rotated = rotate(translated, -new_origin_state.h)
     return rotated
 
+ 
