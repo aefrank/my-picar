@@ -11,21 +11,23 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 #                       IMPORTS
 ##############################################################
 
-import sys
+import sys, os
 from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
 
 # My libraries
-from helpers import sign, angle_a2b, within_pi, clip
+from helpers import sign, angle_a2b, within_pi, clip, InputError
 from my_pid import myPID
 from cartesian_pose import CartesianPose
 from bicycle_model import BicyclePose, BicycleModel, dHdt, dXdt, dYdt
 from costmap import Rect, Map
 
 # Find SunFounder_PiCar submodule
-sys.path.append("../lib/SunFounder_PiCar")
+sys.path.append("SunFounder_PiCar")
+
+
 
 
 class PicarHardwareInterface():
@@ -34,7 +36,7 @@ class PicarHardwareInterface():
     and picar.back_wheels.Back_Wheels classes (or their virtual_wheels analogs).
     '''
 
-    def __init__(self, configfile="config", virtual=False, virtual_verbose=False, max_turn=40):
+    def __init__(self, unit_converter=None, configfile="config", virtual=False, virtual_verbose=False, max_turn=40):
          # Use virtual libraries if requested (so we don't get GPIO errors for not running on a Pi)
         if not virtual:
             import picar
@@ -49,18 +51,25 @@ class PicarHardwareInterface():
             self._fw = Front_Wheels(db=configfile, verbose=virtual_verbose)
             self._bw = Back_Wheels(db=configfile, verbose=virtual_verbose)
 
-        # Max turn radius
-        self._fw.max_turn = max_turn
+
+        if unit_converter is None:
+            unit_converter = HardwareUnitConverter(speed_slope=1, angle_slope=1) # Assume 1:1 unit relationship by default
+        self.unit_converter = unit_converter # HardwareUnitConverter class
+
+        self._fw.max_turn = max_turn         # Max turn radius
+
+        # Initialize hardware
         self._fw.ready()
         self._bw.ready()
         self._bw.forward()
 
-    def turn_wheels(self, steer):
+    def turn_wheels(self, world_steer):
         '''
         Input steer_angle in degrees.
 
         Make it so inputs steer_angles are relative to 0 degrees being straight forward.
         '''
+        steer = self.unit_converter.speed_world2hardware(world_steer)
         self._fw.turn(steer + self._fw._straight_angle)
 
     def turn_wheels_straight(self, overshoot=10, delay=0.05):
@@ -92,10 +101,15 @@ class PicarHardwareInterface():
                 THIS MIGHT NOT BE WISE but i think it is. COULD BE A BUG LOOK HERE IF 
                 TURN DIRECTION IS MESSED UP WHEN BACKWARDS.
         '''
-        # Capture current control values
-        steer_angle = direction*int(steer) # reverse turn direction if we are going backward
+        # Convert controls to hardware units
+        speed = self.unit_converter.speed_hardware2world(speed)
+        steer = self.unit_converter.angle_world2hardware(steer)
+
+        # Address direction input
+        steer = direction*int(steer) # reverse turn direction if we are going backward
         speed = int(abs(speed))
 
+        # SEND CONTROLS TO HARDWARE
         # Set back wheel direction
         if direction == 1:
             self._bw.forward()
@@ -106,8 +120,9 @@ class PicarHardwareInterface():
             pass
         else:
             # If any other edge case, halt picar
-            self.halt()
-            print('Picar object has invalid direction field {}. Picar halting.'.format(self._direction))
+            self.stop_motors()
+            self.turn_wheels_straight()
+            print('Picar object has invalid direction field {}. Picar halting.'.format(direction))
 
         # Set picar steering angle
         if steer==0:
@@ -120,6 +135,8 @@ class PicarHardwareInterface():
             self.stop_motors()
         else: 
             self._bw.speed = speed
+
+
 
 def test_PicarHardwareInterface():
     '''
@@ -187,7 +204,7 @@ def test_MyPicarController():
 
 
 
-class PicarUnitConverter():
+class HardwareUnitConverter():
     '''
     Handle conversions between world units and picar internal units. ASSUMES LINEAR RELATIONSHIPS.
     '''
@@ -195,42 +212,42 @@ class PicarUnitConverter():
         '''
         World = m*Picar + b
         '''
-        self.world_speed_scale  = speed_slope       # [m/s / picar_speed_unit] (i.e. (world speed units)/(picar speed units))
-        self.world_angle_scale  = angle_slope       # [deg/picar_angle_unit]
-        self.world_time_scale   = time_slope        # [sec/picar_time_unit]     (most likely picar_time_unit will be sec)
+        self.world_speed_scale  = speed_slope       # [m/s / hardware_speed_unit] (i.e. (world speed units)/(picar speed units))
+        self.world_angle_scale  = angle_slope       # [deg/hardware_angle_unit]
+        self.world_time_scale   = time_slope        # [sec/hardware_time_unit]     (most likely hardware_time_unit will be sec)
         self.world_speed_offset = speed_intercept   # [m/s]
         self.world_angle_offset = angle_intercept   # [deg]
 
 
-    def speed_picar2world(self, picar_speed):
-        return self.world_speed_scale*picar_speed + self.world_speed_offset     # [m/s]
+    def speed_hardware2world(self, hardware_speed):
+        return self.world_speed_scale*hardware_speed + self.world_speed_offset     # [m/s]
 
-    def angle_picar2world(self, picar_angle):
-        return self.world_angle_scale*picar_angle + self.world_angle_offset     # [deg]
+    def angle_hardware2world(self, hardware_angle):
+        return self.world_angle_scale*hardware_angle + self.world_angle_offset     # [deg]
 
-    def time_picar2world(self, picar_time):
-        return self.world_time_scale*picar_time     # [sec]
+    def time_hardware2world(self, hardware_time):
+        return self.world_time_scale*hardware_time     # [sec]
 
-    def speed_world2picar(self, world_speed):
+    def speed_world2hardware(self, world_speed):
         return (world_speed - self.world_speed_offset)/self.world_speed_scale   # [picar speed units] 
                                                                                 # (i.e. [picar length units/picar time units])
-    def angle_world2picar(self, world_angle):
+    def angle_world2hardware(self, world_angle):
         return (world_angle - self.world_angle_offset)/self.world_angle_scale   # [picar angle units] 
 
-    def time_world2picar(self, world_time):
+    def time_world2hardware(self, world_time):
         return world_time/self.world_time_scale                                 # [picar time units]
 
-def test_PicarUnitConverter():
+def test_HardwareUnitConverter():
     X = [-1, -5.6, 7, 92.3]
-    uc = PicarUnitConverter(speed_slope=3, angle_slope=4, time_slope=1, 
+    uc = HardwareUnitConverter(speed_slope=3, angle_slope=4, time_slope=1, 
                                 speed_intercept=0, angle_intercept=0)
     for x in X:
-        uc.angle_picar2world(x)
-        uc.time_picar2world(x)
-        uc.speed_picar2world(x)
-        uc.angle_picar2world(x)
-        uc.time_picar2world(x)
-        uc.speed_picar2world(x)
+        uc.angle_hardware2world(x)
+        uc.time_hardware2world(x)
+        uc.speed_hardware2world(x)
+        uc.angle_hardware2world(x)
+        uc.time_hardware2world(x)
+        uc.speed_hardware2world(x)
 
 
 class MyWorldFrame():
@@ -274,8 +291,7 @@ class MyWorldFrame():
         self.waypoints  = waypoints
         self.picar_wheelbase = picar_wheelbase
 
-
-    def next_picar_pose(self, speed, steer, direction, dt, picar_pose=None):
+    def next_picar_pose(self, speed, steer, dt, direction=1, picar_pose=None):
         if picar_pose is None:
             picar_pose = self.picar_pose
         dx = dXdt(speed=speed, heading=picar_pose.h, direction=direction)*dt
@@ -294,14 +310,14 @@ def test_MyWorldFrame():
     dt = 0.1
     T = 1
     for dt in range(int(T/dt)):
-        wf.picar_pose = wf.next_picar_pose(velocity=0.5, steer_angle=pi/4, dt=dt, picar_pose=wf.picar_pose)
+        wf.picar_pose = wf.next_picar_pose(speed=0.5, steer=pi/4, dt=dt, picar_pose=wf.picar_pose)
         print(wf.picar_pose)
 
 
 def main():
     # test_PicarHardwareInterface()
     # test_MyPicarController()
-    # test_PicarUnitConverter()
+    # test_HardwareUnitConverter()
     test_MyWorldFrame()
 
 

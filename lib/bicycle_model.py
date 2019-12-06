@@ -10,10 +10,11 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 ##############################################################
 #                       IMPORTS                             #
 ##############################################################
-from math import sin, cos, atan2, pi
+from math import sin, cos, tan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
-from helpers import within_pi, angle_a2b
+
+from helpers import within_pi, angle_a2b, sign, InputError
 import cartesian_pose as cp
 
 
@@ -84,7 +85,7 @@ class BicyclePose():
 
 class BicycleModel():
 
-    def __init__(self, bicycle_pose=None, rho=None, alpha=None, beta=None, L=1):
+    def __init__(self, bicycle_pose=None, rho=0, alpha=0, beta=0, L=1):
         if bicycle_pose is None:
             bicycle_pose = BicyclePose(rho=rho, alpha=alpha, beta=beta)
         self.current_pose = bicycle_pose
@@ -163,15 +164,15 @@ def dBETAdt(rho, alpha, speed, direction=1):
 
 def dHdt(speed, steer, L, direction=1):
     v = sign(direction)*abs(speed)
-    return within_pi(v*tan(steer_angle)/L) 
+    return within_pi(v*tan(steer)/L) 
 
 def dXdt(speed, heading, direction=1):
     v = sign(direction)*abs(speed)
-    return speed*cos(heading)
+    return v*cos(heading)
 
 def dYdt(speed, heading, direction=1):
     v = sign(direction)*abs(speed)
-    return speed*sin(heading)
+    return v*sin(heading)
 
 
 # Not really a bicycle_model thing, more of a decision about how we wanted to
