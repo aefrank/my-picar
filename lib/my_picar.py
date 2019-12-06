@@ -6,6 +6,10 @@ E-mail: a2frank@eng.ucsd.edu
 Purpose: CSE 276A - Intro to Robotics; Fall 2019
 '''
 
+'''
+THIS IS AN OLD DEPRECATED VERSION OF my_picar -- IGNORE IT
+
+
 ##############################################################
 #                       IMPORTS
 ##############################################################
@@ -15,17 +19,19 @@ from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
-from helpers import sign, angle_a2b, under_pi, clip
-from my_pid import PID
-from perspectives import WorldState, BicycleModel
+from helpers import sign, angle_a2b, within_pi, clip
+from my_pid import myPID
+from cartesian_pose import CartesianPose
+from bicycle_model import BicycleModel, BicyclePose
 
 # Find SunFounder_PiCar submodule
 sys.path.append("../lib/SunFounder_PiCar")
 
-
-
-# kspeed = 215
-
+# Calibration parameters
+SPEED_SLOPE = 215
+SPEED_INTERCEPT = 0
+ANGLE_SLOPE = 1
+ANGLE_INTERCEPT = 0
 
 
 ##############################################################
@@ -46,7 +52,7 @@ def ALPHA(robot,goal):
     Angle from the robot's gamma to the vector from (robot location) to (goal location).
     '''
     difference = goal - robot
-    return under_pi(difference.theta())
+    return within_pi(difference.theta())
 
 def BETA(robot,goal): 
     '''
@@ -64,7 +70,7 @@ def dALPHA(v,gamma,rho,alpha):
     return gamma_a2b(a=gamma, b=v*sin(alpha)/rho)
 
 def dBETA(v,rho,alpha):
-    return under_pi(-v*cos(alpha)/rho)
+    return within_pi(-v*cos(alpha)/rho)
 
 
 # World Coordinates
@@ -75,7 +81,7 @@ def dY(v,h):
     return v*sin(h)
 
 def dH(v,gamma,L):
-    return under_pi(v*tan(gamma)/L)
+    return within_pi(v*tan(gamma)/L)
 
 
 # Controls
@@ -96,7 +102,7 @@ def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
     gamma = atan(dh*L/s)
 
     # Bound between [-pi, pi]
-    return under_pi(gamma)
+    return within_pi(gamma)
 
 def should_i_back_up(alpha):
     # If alpha is greater than pi/2, it's easier to go backward
@@ -152,10 +158,10 @@ class Picar:
         self._bw.ready()
         self._bw.forward()
 
-        # PID controllers for parameters
-        self._rhoPID   = PID(Kp=kpr, Ki=kir, Kd=kdr)
-        self._alphaPID = PID(Kp=kpa)
-        self._betaPID  = PID(Kp=kpb)
+        # myPID controllers for parameters
+        self._rhomyPID   = myPID(Kp=kpr, Ki=kir, Kd=kdr)
+        self._alphamyPID = myPID(Kp=kpa)
+        self._betamyPID  = myPID(Kp=kpb)
 
         # Set maximum values of control signals -- IN PICAR UNITS (e.g. degrees, not radians)
         self.MAX_PICAR_SPEED = max_picar_speed
@@ -164,9 +170,9 @@ class Picar:
         # Minimum loop delay
         self.min_dt = min_dt
 
-        # Initialize WorldState and BicycleModel
-        self._my_worldstate   = WorldState(0,0,0)
-        self._goal_worldstate = WorldState(0,0,0)
+        # Initialize CartesianPose and BicycleModel
+        self._my_worldstate   = CartesianPose(0,0,0)
+        self._goal_worldstate = CartesianPose(0,0,0)
         self._BM = BicycleModel(0,0,0)
 
 
@@ -242,8 +248,8 @@ class Picar:
         #   variables that haven't been initialized yet in 'finally:')
 
         # Initialize world parameters
-        self._my_worldstate   = WorldState(xyh=waypoints[0])
-        self._goal_worldstate = WorldState(xyh=waypoints[1])
+        self._my_worldstate   = CartesianPose(xyh=waypoints[0])
+        self._goal_worldstate = CartesianPose(xyh=waypoints[1])
         
         # Initialize times
         dt = self.min_dt
@@ -268,10 +274,10 @@ class Picar:
                 # Update initial my_worldstate to ideal location -- exactly at the last waypoint
                 #   You may want to comment this out to keep the model at the world state
                 #   of its last timestep on the previous goal loop.
-                self._my_worldstate = WorldState(xyh=waypoints[i]) 
+                self._my_worldstate = CartesianPose(xyh=waypoints[i]) 
 
                 # Record goal world state
-                self._goal_worldstate = WorldState(xyh=waypoints[i+1])
+                self._goal_worldstate = CartesianPose(xyh=waypoints[i+1])
 
                 # Calculate initial BicycleModel state
                 self._BM = BicycleModel.from_world(self._goal_worldstate, self._my_worldstate)
@@ -423,9 +429,9 @@ class Picar:
 
     def _V(self, dt=1):
         '''
-        Use PID control to calculate velocity.
+        Use myPID control to calculate velocity.
         '''
-        v = V(self._BM.rho, self._rhoPID, dt=dt)
+        v = V(self._BM.rho, self._rhomyPID, dt=dt)
 
         # Bound from [0, MAX_PICAR_SPEED]
         v = min(max(v,0), self.MAX_PICAR_SPEED)
@@ -435,10 +441,10 @@ class Picar:
     # TODO? Change steering based on rho? e.g. if rho is changing quickly err toward alpha
     def _GAMMA(self, v, dt=1):
         '''
-        Use PID control to calculate turn gamma.
+        Use myPID control to calculate turn gamma.
         '''
         gamma = GAMMA(v=v, alpha=self._BM.alpha, beta=self._BM.beta,
-                            alpha_controller=self._alphaPID, beta_controller=self._betaPID,
+                            alpha_controller=self._alphamyPID, beta_controller=self._betamyPID,
                             L=self._L, dt=dt)
 
         # Check if no turn is required
@@ -452,7 +458,7 @@ class Picar:
         gamma = clip(gamma, -bound, bound)
 
         # Bound between [-pi, pi]
-        return under_pi(gamma)
+        return within_pi(gamma)
 
 
 
@@ -562,9 +568,9 @@ class Picar:
         dh = dH( v=self._v, gamma=self._gamma, L=self._L )
 
         # Update world state
-        new_worldstate = old_worldstate + WorldState(xyh=[dx, dy, dh])*dt
+        new_worldstate = old_worldstate + CartesianPose(xyh=[dx, dy, dh])*dt
         # Keep h in [-pi, pi]
-        new_worldstate.h = under_pi(new_worldstate.h)
+        new_worldstate.h = within_pi(new_worldstate.h)
 
         return new_worldstate
 
@@ -593,7 +599,7 @@ class Picar:
         print("Goal:\t\tx:   {:>6.2f}\ty:     {:>6.2f}\tgamma: {:>6.2f}\t".format(
             self._goal_worldstate.x, self._goal_worldstate.y, self._goal_worldstate.h*180/pi) )
         print("--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --")
-        print("WorldState:\tx:   {:>6.2f}\ty:     {:>6.2f}\tgamma: {:>6.2f}".format(
+        print("CartesianPose:\tx:   {:>6.2f}\ty:     {:>6.2f}\tgamma: {:>6.2f}".format(
             self._my_worldstate.x, self._my_worldstate.y, self._my_worldstate.h*180/pi) )
         print("BicycleModel:\trho: {:>6.2f}\talpha: {:>6.2f}\tbeta:    {:>6.2f}".format(
             self._BM.rho, self._BM.alpha*180/pi, self._BM.beta*180/pi) )
@@ -689,6 +695,6 @@ if __name__=="__main__":
 
 
 
-
+'''
 
 

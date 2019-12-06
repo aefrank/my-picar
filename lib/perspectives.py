@@ -44,7 +44,7 @@ def bicycle2robot(bicycle_pose, goal_cartesian):
     '''
     # If bicycle_pose is a BicycleModel object, extract BicyclePose
     if isinstance(bicycle_pose, bike.BicycleModel):
-        bicycle_pose = bike.BicycleModel.current_pose
+        bicycle_pose = bicycle_pose.current_pose
 
     picar_x = goal_cartesian.x - bicycle_pose.rho * cos(goal_cartesian.h - bicycle_pose.beta)
     picar_y = goal_cartesian.y - bicycle_pose.rho * sin(goal_cartesian.h - bicycle_pose.beta)
@@ -57,7 +57,7 @@ def bicycle2goal(bicycle_pose, robot_cartesian):
     '''
     # If bicycle_pose is a BicycleModel object, extract BicyclePose
     if isinstance(bicycle_pose, bike.BicycleModel):
-        bicycle_pose = bike.BicycleModel.current_pose
+        bicycle_pose = bicycle_pose.current_pose
 
     goal_x = robot_cartesian.x + bicycle_pose.rho * cos(robot_cartesian.h + bicycle_pose.alpha)
     goal_y = robot_cartesian.y + bicycle_pose.rho * sin(robot_cartesian.h + bicycle_pose.alpha)
@@ -69,27 +69,28 @@ def bicycle2goal(bicycle_pose, robot_cartesian):
 
     
 def test():
-    robot_cartesian = cart.CartesianPose(4,8,3*pi/4)
-    goal_cartesian = cart.CartesianPose(9,3,pi/4)
-    print("Robot in cartesian ref frame: {}\nGoal in cartesian ref frame: {}".format(
-        robot_cartesian,goal_cartesian))
+    print("Test needs to be updated before it will run.")
+    # robot_cartesian = cart.CartesianPose(4,8,3*pi/4)
+    # goal_cartesian = cart.CartesianPose(9,3,pi/4)
+    # print("Robot in cartesian ref frame: {}\nGoal in cartesian ref frame: {}".format(
+    #     robot_cartesian,goal_cartesian))
 
 
-    # print(goal_cart.wrt(robot_cartesian))
+    # # print(goal_cart.wrt(robot_cartesian))
 
-    robot_bicyclepose = cartesian_to_bicycle(robot_cartesian, robot_in_cartesian_ref_frame=robot_cartesian)
-    goal_bicyclepose = cartesian_to_bicycle(goal_cartesian, robot_in_cartesian_ref_frame=robot_cartesian)
+    # robot_bicyclepose = cartesian_to_bicycle(robot_cartesian, robot_in_cartesian_ref_frame=robot_cartesian)
+    # goal_bicyclepose = cartesian_to_bicycle(goal_cartesian, robot_in_cartesian_ref_frame=robot_cartesian)
 
-    print("Cartesian coords: {}\nBM coords: {}\n\n".format(
-        goal_cartesian, goal_bicyclepose))
+    # print("Cartesian coords: {}\nBM coords: {}\n\n".format(
+    #     goal_cartesian, goal_bicyclepose))
 
-    rc = bicycle_to_cartesian(robot_bicyclepose,robot_in_cartesian_ref_frame=robot_cartesian)
-    gc = bicycle_to_cartesian(goal_bicyclepose,robot_in_cartesian_ref_frame=robot_cartesian)
+    # rc = bicycle_to_cartesian(robot_bicyclepose,robot_in_cartesian_ref_frame=robot_cartesian)
+    # gc = bicycle_to_cartesian(goal_bicyclepose,robot_in_cartesian_ref_frame=robot_cartesian)
 
-    print("Original robot position: {}\nRecalculated robot position: {}\n".format(
-        robot_cartesian, rc))
-    print("Original goal position: {}\nRecalculated goal position: {}\n".format(
-        goal_cartesian, gc))
+    # print("Original robot position: {}\nRecalculated robot position: {}\n".format(
+    #     robot_cartesian, rc))
+    # print("Original goal position: {}\nRecalculated goal position: {}\n".format(
+    #     goal_cartesian, gc))
 
 
 
