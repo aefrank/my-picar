@@ -15,19 +15,65 @@ from time import sleep, monotonic
 from math import sin, cos, tan, atan, atan2, pi
 from numpy.linalg import norm
 import numpy as np
-
-# Find SunFounder_PiCar submodule
-sys.path.append("../lib/SunFounder_PiCar")
-
-# Custom libraries
 from helpers import sign, angle_a2b, within_pi, clip
 from my_pid import myPID
 import perspectives 
 from cartesian_pose import CartesianPose
 from bicycle_model import BicyclePose, BicycleModel
 
+# Find SunFounder_PiCar submodule
+sys.path.append("../lib/SunFounder_PiCar")
 
 
+
+
+##############################################################
+#                  CALCULATE CONTROLS
+##############################################################
+
+# Controls
+def V(rho, rho_controller, dt=1):
+    return rho_controller.input(rho, dt=dt)
+
+
+def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
+    a = alpha_controller.input(alpha, dt=dt) 
+    b = beta_controller .input(beta,  dt=dt)  
+
+    # Weighted change in gamma = desired dh
+    dh = a + b
+
+    # Turn gamma is measured from the front wheel, not the back wheel; 
+    # Get front wheel turn gamma
+    s = abs(v) # make sure we have unsigned speed; direction is already handles
+    gamma = atan(dh*L/s)
+
+    # Bound between [-pi, pi]
+    return under_pi(gamma)
+
+##############################################################
+#                  CALCULATE NEXT POSE
+##############################################################    
+
+def calculate_next_pose(old_pose, v, gamma, dt=1):
+    '''
+    Calculate the next CartesianPose state of an object with a certain speed and steering angle.
+    '''
+    # Calculate change in world state
+    dx = dX( v=v, h=old_pose.h )
+    dy = dY( v=v, h=old_pose.h )
+    dh = dH( v=v, gamma=gamma, L=L )
+
+    # Update world state
+    new_pose = old_pose + CartesianPose(xyh=[dx, dy, dh])*dt
+    # Keep h in [-pi, pi]
+    new_pose.h = within_pi(new_pose.h)
+
+    return new_pose
+
+
+
+# @TODO: Make sure Picar class is ONLY dealing with the world of the Picar -> make other classes/functions to deal with control, etc.
 
 ##############################################################
 #                   PICAR CLASS
