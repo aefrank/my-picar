@@ -36,41 +36,51 @@ class PicarHardwareInterface():
     and picar.back_wheels.Back_Wheels classes (or their virtual_wheels analogs).
     '''
 
-    def __init__(self, unit_converter=None, configfile="config", virtual=False, virtual_verbose=False, max_turn=40):
+    def __init__(self, max_steer=40, max_speed=90,
+                       unit_converter=None, configfile="config", 
+                       virtual=False, virtual_verbose=False, initialize=True):
          # Use virtual libraries if requested (so we don't get GPIO errors for not running on a Pi)
         if not virtual:
             import picar
             from picar.front_wheels import Front_Wheels
             from picar.back_wheels import Back_Wheels
             picar.setup()
-            self._fw = Front_Wheels(db=configfile)
-            self._bw = Back_Wheels(db=configfile)
+            self.fw = Front_Wheels(db=configfile)
+            self.bw = Back_Wheels(db=configfile)
         else:
             from virtual_wheels import Virtual_Front_Wheels as Front_Wheels
             from virtual_wheels import Virtual_Back_Wheels as Back_Wheels
-            self._fw = Front_Wheels(db=configfile, verbose=virtual_verbose)
-            self._bw = Back_Wheels(db=configfile, verbose=virtual_verbose)
+            self.fw = Front_Wheels(db=configfile, verbose=virtual_verbose)
+            self.bw = Back_Wheels(db=configfile, verbose=virtual_verbose)
 
 
         if unit_converter is None:
             unit_converter = HardwareUnitConverter(speed_slope=1, angle_slope=1) # Assume 1:1 unit relationship by default
         self.unit_converter = unit_converter # HardwareUnitConverter class
 
-        self._fw.max_turn = max_turn         # Max turn radius
+        self.fw.max_turn = max_steer         # Max turn radius
 
+        if initialize:
+            self.initialize()
+
+
+    # PUBLIC METHODS: All inputs assumed to be in WORLD UNITS
+
+    def initialize(self):
         # Initialize hardware
-        self._fw.ready()
-        self._bw.ready()
-        self._bw.forward()
+        self.fw.ready()
+        self.bw.ready()
+        self.bw.forward()
+
 
     def turn_wheels(self, world_steer):
         '''
-        Input steer_angle in degrees.
-
-        Make it so inputs steer_angles are relative to 0 degrees being straight forward.
+        Input steer in WORLD ANGLE UNITS.
+        Make it so inputs steer are relative to 0 degrees being straight forward.
         '''
         steer = self.unit_converter.speed_world2hardware(world_steer)
-        self._fw.turn(steer + self._fw._straight_angle)
+        self.fw.turn(steer + self.fw._straight_angle)
+
 
     def turn_wheels_straight(self, overshoot=10, delay=0.05):
         '''
@@ -83,17 +93,22 @@ class PicarHardwareInterface():
         sleep(delay)
         self.turn_wheels(-overshoot)
         sleep(delay)
-        self._fw.turn_straight()
+        self.fw.turn_straight()
         self._steering = 0
+
 
     def stop_motors(self):
         '''
         Low level, minimal latency method to stop picar motors. Leaves steering/direction as is.
         '''
-        self._bw.stop()
+        self.bw.stop()
         self._speed= 0
 
-    def apply_controls(self, speed, steer, direction=1):
+
+    
+
+
+    def send_controls(self, speed=None, steer=None, direction=None):
         '''
         Send current speed and steer_angle control signals to hardware.
         Note: direction=-1 will flip BOTH STEER AND SPEED INPUTS such that
@@ -101,40 +116,89 @@ class PicarHardwareInterface():
                 THIS MIGHT NOT BE WISE but i think it is. COULD BE A BUG LOOK HERE IF 
                 TURN DIRECTION IS MESSED UP WHEN BACKWARDS.
         '''
-        # Convert controls to hardware units
-        speed = self.unit_converter.speed_hardware2world(speed)
-        steer = self.unit_converter.angle_world2hardware(steer)
+        # Send controls that have been defined
+        controls_sent = []
 
-        # Address direction input
-        steer = direction*int(steer) # reverse turn direction if we are going backward
-        speed = int(abs(speed))
+        if direction is not None:
+            self._send_direction(direction)
+        else:
+            direction = 1
 
-        # SEND CONTROLS TO HARDWARE
+        return_vals = None
+        if steer is not None:
+            steer = direction*int(steer) # reverse turn direction if we are going backward
+            steer = self.unit_converter.angle_world2hardware(steer) # to HW units
+            steer = self._send_steer(steer) 
+            steer = self.unit_converter.angle_hardware2world(steer) # back to world units
+            controls_sent.append(steer)
+
+        if speed is not None:
+            speed = int(abs(speed))
+            speed = self.unit_converter.speed_hardware2world(speed) # to HW units
+            speed = self._send_speed(speed)
+            speed = self.unit_converter.speed_hardware2world(speed) # back to world units
+            controls_sent.insert(0,speed)  # By convention, we want speed THEN steer
+
+        return controls_sent     # Return control values that were sent to hardware in world units, 
+                                 # which may have been modified if they exceeded hw limits
+
+
+    # PRIVATE METHODS: All inputs assumed to be in PICAR UNITS
+
+    def _send_speed(self, speed):
+        '''
+        Input speed in HARDWARE UNITS.
+        Sends control signal to hardware.
+        '''
+        # Set picar speed
+        if speed==0:
+            self.stop_motors()
+        else: 
+            # Bound by max speed
+            if abs(speed) > self.max_speed:
+                speed = sign(speed)*self.max_speed
+            self.bw.speed = speed
+
+        return speed # Returns value of speed, which MAY HAVE BEEN CHANGED if over max speed
+
+
+    def _send_steer(self, steer):
+        '''
+        Input steer in HARDWARE UNITS.
+        Sends control signal to hardware.
+        '''
+        # Set picar steering angle
+        if steer==0:
+            self.turn_wheels_straight()
+        else:
+            # Bound by max steer
+            if abs(steer) > self.max_steer:
+                steer = sign(steer)*self.max_steer
+                steer_changed = steer
+            self.turn_wheels(steer)
+
+        return steer # Returns value of steer, which MAY HAVE BEEN CHANGED if over max steer
+
+    def _send_direction(self, direction):
         # Set back wheel direction
         if direction == 1:
-            self._bw.forward()
+            self.bw.forward()
         elif direction == -1:
-            self._bw.backward()
+            self.bw.backward()
         elif direction == 0:
-            # If direction is 0, don't change _bw's settings.
+            # If direction is 0, don't change bw's settings.
             pass
         else:
             # If any other edge case, halt picar
             self.stop_motors()
             self.turn_wheels_straight()
             print('Picar object has invalid direction field {}. Picar halting.'.format(direction))
+            return None # failure flag
 
-        # Set picar steering angle
-        if steer==0:
-            self.turn_wheels_straight()
-        else:
-            self.turn_wheels(steer)
+        return direction
+        
 
-        # Set picar speed
-        if speed==0:
-            self.stop_motors()
-        else: 
-            self._bw.speed = speed
+        
 
 
 
