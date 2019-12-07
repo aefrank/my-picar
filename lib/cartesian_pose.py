@@ -10,7 +10,6 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 #                       IMPORTS                             #
 ##############################################################
 from math import sin, cos, atan2, pi, sqrt
-from numpy.linalg import norm
 import numpy as np
 from helpers import within_pi
 
@@ -54,6 +53,9 @@ class CartesianPose():
     def rotate(self, angle):
         return rotate(self, angle)
 
+    def dist_to(self, pose2):
+        return norm(self-pose2)
+
 
     #############################################
     #         OVERRIDE BUILT-IN METHODS         #
@@ -96,10 +98,6 @@ class CartesianPose():
         return CartesianPose(self.x**p, self.y**p, within_pi(self.h**p))
 
     
-    def dist(self, pose2):
-        sq = (self - pose2)**2
-        sm = sq.x + sq.y
-        return sqrt(sm)
 
 
 

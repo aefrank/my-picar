@@ -21,7 +21,7 @@ import numpy as np
 from helpers import sign, angle_a2b, within_pi, clip, InputError
 from my_pid import myPID
 from cartesian_pose import CartesianPose
-from bicycle_model import BicyclePose, BicycleModel, dHdt, dXdt, dYdt
+from bicycle_model import BicyclePose, dHdt, dXdt, dYdt
 from costmap import Rect, Map
 
 # Find SunFounder_PiCar submodule
@@ -59,6 +59,8 @@ class PicarHardwareInterface():
         self.unit_converter = unit_converter # HardwareUnitConverter class
 
         self.fw.max_turn = max_steer         # Max turn radius
+        self.max_speed = max_speed
+        self.max_steer = max_steer
 
         if initialize:
             self.initialize()
@@ -82,19 +84,7 @@ class PicarHardwareInterface():
         self.fw.turn(steer + self.fw._straight_angle)
 
 
-    def turn_wheels_straight(self, overshoot=10, delay=0.05):
-        '''
-        Often when "turning straight", the picar stops a bit short of fully straight
-        forward. This is my attempt to remedy that by overshooting then correcting.
-
-        Tune the overshoot [deg] and delay [sec] if it's too jittery.
-        '''
-        self.turn_wheels(overshoot)
-        sleep(delay)
-        self.turn_wheels(-overshoot)
-        sleep(delay)
-        self.fw.turn_straight()
-        self._steering = 0
+    
 
 
     def stop_motors(self):
@@ -124,17 +114,16 @@ class PicarHardwareInterface():
         else:
             direction = 1
 
-        return_vals = None
         if steer is not None:
-            steer = direction*int(steer) # reverse turn direction if we are going backward
+            steer = direction*steer # reverse turn direction if we are going backward
             steer = self.unit_converter.angle_world2hardware(steer) # to HW units
             steer = self._send_steer(steer) 
             steer = self.unit_converter.angle_hardware2world(steer) # back to world units
             controls_sent.append(steer)
 
         if speed is not None:
-            speed = int(abs(speed))
-            speed = self.unit_converter.speed_hardware2world(speed) # to HW units
+            speed = direction*speed
+            speed = self.unit_converter.speed_world2hardware(speed) # to HW units
             speed = self._send_speed(speed)
             speed = self.unit_converter.speed_hardware2world(speed) # back to world units
             controls_sent.insert(0,speed)  # By convention, we want speed THEN steer
@@ -167,15 +156,10 @@ class PicarHardwareInterface():
         Input steer in HARDWARE UNITS.
         Sends control signal to hardware.
         '''
-        # Set picar steering angle
-        if steer==0:
-            self.turn_wheels_straight()
-        else:
-            # Bound by max steer
-            if abs(steer) > self.max_steer:
-                steer = sign(steer)*self.max_steer
-                steer_changed = steer
-            self.turn_wheels(steer)
+        # Set picar steering angle and bound by max steer
+        if abs(steer) > self.max_steer:
+            steer = sign(steer)*self.max_steer
+        self.turn_wheels(steer)
 
         return steer # Returns value of steer, which MAY HAVE BEEN CHANGED if over max steer
 
@@ -191,7 +175,7 @@ class PicarHardwareInterface():
         else:
             # If any other edge case, halt picar
             self.stop_motors()
-            self.turn_wheels_straight()
+            self.turn_wheels(0)
             print('Picar object has invalid direction field {}. Picar halting.'.format(direction))
             return None # failure flag
 
@@ -208,9 +192,9 @@ def test_PicarHardwareInterface():
     '''
     hw = PicarHardwareInterface(virtual=True)
     hw.turn_wheels(-20)
-    hw.turn_wheels_straight()
+    hw.turn_wheels(0)
     hw.stop_motors()
-    hw.apply_controls(1,-1,1)
+    hw.send_controls(1,-1,1)
 
 class MyPicarController():
     '''
@@ -241,23 +225,23 @@ class MyPicarController():
         b = self.beta_controller .input(beta,  dt=dt)  
 
         # Weighted change in gamma = desired dh
-        dh = a + b
+        omega = a + b
 
         # Steer angle is measured from the front wheel, not the back wheel; 
         s = abs(speed) # make sure we have unsigned speed; direction should be handled separately
-        steer = atan(dh*L/s)
+        steer = atan(omega*L/s)
 
-        # Bound between [-pi, pi]
-        return within_pi(steer)
+        # This time we don't want to bound steering -> A large angle should just go to max possible turn
+        return steer
 
     def DIRECTION(self, alpha, dt=1):
         # If alpha is greater than pi/2, it's easier to go backward
         # Inspired by code.py example from Homework 1.
         # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
         if abs(alpha) > (pi/2 + 1e-4):
-            return True
+            return -1
         else:
-            return False
+            return 1
 
 def test_MyPicarController():
     pc = MyPicarController()
@@ -286,8 +270,12 @@ class HardwareUnitConverter():
     def speed_hardware2world(self, hardware_speed):
         return self.world_speed_scale*hardware_speed + self.world_speed_offset     # [m/s]
 
-    def angle_hardware2world(self, hardware_angle):
-        return self.world_angle_scale*hardware_angle + self.world_angle_offset     # [deg]
+    def angle_hardware2world(self, hardware_angle, radians=True):
+        world_angle = self.world_angle_scale*hardware_angle + self.world_angle_offset     # [deg]
+        if radians:
+            # Return output in radians
+            world_angle *= pi/180
+        return world_angle
 
     def time_hardware2world(self, hardware_time):
         return self.world_time_scale*hardware_time     # [sec]
@@ -295,8 +283,11 @@ class HardwareUnitConverter():
     def speed_world2hardware(self, world_speed):
         return (world_speed - self.world_speed_offset)/self.world_speed_scale   # [picar speed units] 
                                                                                 # (i.e. [picar length units/picar time units])
-    def angle_world2hardware(self, world_angle):
-        return (world_angle - self.world_angle_offset)/self.world_angle_scale   # [picar angle units] 
+    def angle_world2hardware(self, world_angle, radians=True):
+        if radians:
+            # Convert to degrees
+            world_angle = world_angle * 180/pi
+        return (world_angle - self.world_angle_offset)/self.world_angle_scale  # [picar angle units] 
 
     def time_world2hardware(self, world_time):
         return world_time/self.world_time_scale                                 # [picar time units]

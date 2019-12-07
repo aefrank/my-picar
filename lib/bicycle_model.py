@@ -28,12 +28,12 @@ class BicyclePose():
     - Update (rho,alpha,beta) from v and gamma.
     '''
 
-    def __init__(self,  rho=None, alpha=None, beta=None,  
+    def __init__(self,  rho=0, alpha=0, beta=0,  
                         x=None, y=None, h=None,
                         goal_cartesian=None, robo_cartesian=None):
         '''
-        Can initialize with a (rho,alpha,beta), from a cp.CartesianPose object,
-            from an (x,y,h), or with a combination of the above that fully
+        Can initialize with a (rho,alpha,beta), from a goal cp.CartesianPose object,
+            from an goal (x,y,h), or with a combination of the above that fully
             defines a bicycle model.
         '''
 
@@ -68,46 +68,62 @@ class BicyclePose():
         self.alpha = alpha
         self.beta  = beta
 
+    @staticmethod
+    def from_cartesian( x=0, y=0, h=0, goal_cartesian=None, robo_cartesian=None):
+        return BicyclePose(x=x, y=y, h=h,
+                                goal_cartesian=goal_cartesian, 
+                                robo_cartesian=robo_cartesian)
+
+
+
+    #############################################
+    #         OVERRIDE BUILT-IN METHODS         #
+    #############################################
 
     def __str__(self):
         return "BicyclePose: ({:>6.3f}, {:>6.3f}, {:>6.3f})".format(self.rho, self.alpha, self.beta)
 
-# class BicycleModelControllers():
-#     '''
-#     Class to hold PID controllers for Bicycle Model
-#     '''
-#     def __init__(self, rho_controller, alpha_controller, beta_controller):
-#         self.rho   = rho_controller
-#         self.alpha = alpha_controller
-#         self.beta  = beta_controller
+    def __add__(self, cp):
+        return BicyclePose (self.rho+cp.rho, within_pi(self.alpha+cp.alpha), within_pi(self.beta+cp.beta))
+
+    def __radd__(self, cp):
+        return BicyclePose (self.rho+cp.rho, within_pi(self.alpha+cp.alpha), within_pi(self.beta+cp.beta))
+
+    def __iadd__(self, cp):
+        self.rho = self.rho+cp.rho
+        self.alpha = within_pi(self.alpha+cp.alpha)
+        self.beta = within_pi(self.beta+cp.beta)
+        return self
+
+    def __rsub__(self, cp):
+        return BicyclePose (self.rho-cp.rho, within_pi(self.alpha-cp.alpha), within_pi(self.beta-cp.beta))
+
+    def __sub__(self, cp):
+        return BicyclePose (self.rho-cp.rho, within_pi(self.alpha-cp.alpha), within_pi(self.beta-cp.beta))
+
+    def __isub__(self, cp):
+        self.rho = self.rho-cp.rho
+        self.alpha = within_pi(self.alpha-cp.alpha)
+        self.beta = within_pi(self.beta-cp.beta)
+        return self
+
+    def __neg__(self):
+        return BicyclePose(-self.rho, -self.alpha, -self.beta)
+
+    def __mul__(self, k):
+        return BicyclePose(k*self.rho, within_pi(k*self.alpha), within_pi(k*self.beta))
+
+    def __pow__(self, p):
+        return BicyclePose(self.rho**p, within_pi(self.alpha**p), within_pi(self.beta**p))
 
 
 
-class BicycleModel():
 
-    def __init__(self, bicycle_pose=None, rho=0, alpha=0, beta=0, L=1):
-        if bicycle_pose is None:
-            bicycle_pose = BicyclePose(rho=rho, alpha=alpha, beta=beta)
-        self.current_pose = bicycle_pose
-        self.L = L
-
-    @staticmethod
-    def from_cartesian( x=None, y=None, h=None,
-                        goal_cartesian=None, 
-                        robo_cartesian=None):
-        bicycle_pose = BicyclePose(x=x, y=y, h=h,
-                               goal_cartesian=goal_cartesian, 
-                               robo_cartesian=robo_cartesian)
-        return BicycleModel(bicycle_pose)
-
-    def next_pose(self, speed, steer, direction, dt, current_pose=None):
-        if current_pose==None:
-            current_pose = self.current_pose
-        drhodt   = dRHOdt  (                       alpha=current_pose.alpha,   speed=speed,                direction=direction)
-        dalphadt = dALPHAdt(rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed, steer=steer,   direction=direction)
-        dbetadt  = dBETAdt (rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed,                direction=direction)
-
-        return current_pose + dt*BicyclePose(drhodt,dalphadt,dbetadt)
+def next_pose(current_pose, speed, steer, dt, direction=1):
+    drhodt   = dRHOdt  (                       alpha=current_pose.alpha,   speed=speed,                direction=direction)
+    dalphadt = dALPHAdt(rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed, steer=steer,   direction=direction)
+    dbetadt  = dBETAdt (rho=current_pose.rho,  alpha=current_pose.alpha,   speed=speed,                direction=direction)
+    return current_pose + BicyclePose(drhodt,dalphadt,dbetadt)*dt
 
 
 
@@ -173,54 +189,6 @@ def dXdt(speed, heading, direction=1):
 def dYdt(speed, heading, direction=1):
     v = sign(direction)*abs(speed)
     return v*sin(heading)
-
-
-# Not really a bicycle_model thing, more of a decision about how we wanted to
-# calculate controls BASED ON BicycleModel -- put in my_picar instead
-#
-# ##############################
-# #     CALCULATE CONTROLS     #
-# ##############################
-
-# def V(rho, rho_controller, dt=1):
-#     '''
-#     Calculate velocity at next timestep based on rho.
-#     rho_controller must be a my_pid.PID object
-#     '''
-#     return rho_controller.input(rho, dt=dt)
-
-
-# def GAMMA(v, alpha, beta, alpha_controller, beta_controller, L=1, dt=1):
-#     '''
-#     Calculate steering angle gamma at next timestep based on alpha and beta.
-#     {alpha,beta}_controller must be a my_pid.PID object
-#     '''
-#     a = alpha_controller.input(alpha, dt=dt) 
-#     b = beta_controller .input(beta,  dt=dt)  
-
-#     # Desired change in heading angle
-#     dh = a + b
-#     omega = dh/dt
-
-#     # Calculate steering angle corresponding to angular velocity
-#        # based on car geometry and linear velocity
-#     gamma = atan(omega*L/v)
-
-#     # Bound between [-pi, pi]
-#     return within_pi(gamma)
- 
-
-# def should_i_back_up(alpha):
-#     # If alpha is greater than pi/2, it's easier to go backward
-#     # Inspired by code.py example from Homework 1.
-#     # https://d1b10bmlvqabco.cloudfront.net/attach/k0uju462t062l4/j12evy3w52o5kl/k1vnoghb1697/code.pdf
-#     if abs(alpha) > (pi/2 + 1e-4):
-#         return True
-#     else:
-#         return False
-
-
-
 
 
 
