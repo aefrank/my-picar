@@ -42,7 +42,7 @@ class Picar:
     Class to represent Picar robot.
     '''
     
-    def __init__(self,  hw = None, configfile="config", L=0.145, 
+    def __init__(self,  hw = None, configfile="config", L=0.14, 
                         max_speed_hw=90, max_steer_hw=40, unit_converter=None, 
                         virtual=False, verbose=False, virtual_verbose=False):
         
@@ -64,6 +64,7 @@ class Picar:
 
         # Model 
         self.bicycle_model = BicycleModel(bicycle_pose=BicyclePose(0,0,0), L=L)
+        self.world_pose = CartesianPose(0,0,0)
 
 
     # Highest level picar control
