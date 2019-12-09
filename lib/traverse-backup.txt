@@ -1,0 +1,154 @@
+    def traverse(self, waypoints):
+        '''
+        Traverse a set of waypoints.
+        '''
+        # Breakflag; as of now it never gets set to True, but keeping around in
+        # case we want it later so we don't have to reimplement.
+        # NOTE: while loop DOES check for it right now.
+        breakflag = False
+
+        ##############################################################
+        #                       INITIALIZE
+        ##############################################################
+        # IMPORTANT: Initialize printable variables (so they don't cause errors
+        #   when the try-catch statement tries to catch and error and print out
+        #   variables that haven't been initialized yet in 'finally:')
+
+        # Initialize world parameters
+        self._my_worldstate   = WorldState(xyh=waypoints[0])
+        self._goal_worldstate = WorldState(xyh=waypoints[1])
+        
+        # Initialize times
+        dt = self.min_dt
+        t = 0
+
+        # Initialize controls
+        picar_speed = 0
+        picar_turn = 0
+
+        ##############################################################
+        #                  LOOP THROUGH WAYPOINTS
+        ##############################################################
+        try:
+            # For each waypoint
+            for i in range(len(waypoints)-1):
+
+                ##############################################################
+                #             INITIALIZE NEW GOAL POSE
+                ##############################################################
+
+                # OPTIONAL:
+                # Update initial my_worldstate to ideal location -- exactly at the last waypoint
+                #   You may want to comment this out to keep the model at the world state
+                #   of its last timestep on the previous goal loop.
+                self._my_worldstate = WorldState(xyh=waypoints[i]) 
+
+                # Record goal world state
+                self._goal_worldstate = WorldState(xyh=waypoints[i+1])
+
+                # Calculate initial BicycleModel state
+                self._BM = BicycleModel.from_world(self._goal_worldstate, self._my_worldstate)
+                
+
+                ##############################################################
+                #                        CONTROL LOOP
+                ##############################################################
+
+                # Record start time
+                stopwatch = monotonic()
+                # Stop when close enough in terms of distance and gamma
+                while ( 
+                        not ((self._BM.rho<0.1) and (abs(self._my_worldstate.h)<pi/6)) 
+                    and not breakflag
+                    ):
+
+                    # Calculate controls from current BicycleModel state (rho,alpha,beta)
+                    self._v, self._gamma = self._get_v_gamma(dt=dt)
+                    picar_speed, picar_turn = self._calculate_hardware_controls(
+                            v=self._v, gamma=self._gamma, dt=dt, adjust_inputs=True )
+                    # Send control signals to hardware
+                    self._transmit_controls(picar_speed, picar_turn)
+
+                    # Update world state
+                    self._my_worldstate = self._next_worldstate(self._my_worldstate, dt=dt)
+
+                    # Calculate new ego-centric state
+                    self._BM = BicycleModel.from_world(self._goal_worldstate, self._my_worldstate)
+
+                    # If verbose, print status every half second
+                    if self.verbose and t % 0.5 < dt:
+                        self.print_status(t=t, dt=dt, picar_speed=picar_speed, picar_turn=picar_turn)
+
+                    # Timekeeping
+                    sleep(self.min_dt) # Wait for minimum loop time
+                    dt = monotonic() - stopwatch # Catch elapsed time this loop
+                    stopwatch = stopwatch + dt # Update stopwatch
+                    t = t+dt # Update elapsed time since start of control loop
+
+
+
+                ##############################################################
+                #                        GOAL REACHED
+                ##############################################################
+
+                # while loop concluded without error -- we are at the goal!
+                if self.verbose:
+                    self.print_goal()
+
+
+        ##############################################################
+        #                       EXCEPTION HANDLING
+        ##############################################################
+
+        # I can't remember why I needed this except clause but I think it didn't work right without it
+        except Exception as e:
+            raise e
+
+        # Print state and halt picar before exiting
+        finally:
+            if self.verbose:
+                self.print_status(t=t, dt=dt, picar_speed=picar_speed, picar_turn=picar_turn)
+            self.halt()   
+            sleep(0.01)
+
+
+##############################################################
+    #                   HELPER FUNCTIONS
+    ##############################################################
+
+    def print_status(self, t=-1, dt=-1, picar_speed=-1, picar_turn=-1):
+        '''
+        Print the values of current important state variables to monitor progress.
+        '''
+        print("\n----------------------------------------------------------------") 
+        if (t != -1) or (dt != -1):
+            print("Time [s]:\tt:   {:>6.2f}\tdt:  {:>2.6f}".format(t,dt))
+        print("Goal:\t\tx:   {:>6.2f}\ty:     {:>6.2f}\tgamma: {:>6.2f}\t".format(
+            self._goal_worldstate.x, self._goal_worldstate.y, self._goal_worldstate.h*180/pi) )
+        print("--  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --")
+        print("WorldState:\tx:   {:>6.2f}\ty:     {:>6.2f}\tgamma: {:>6.2f}".format(
+            self._my_worldstate.x, self._my_worldstate.y, self._my_worldstate.h*180/pi) )
+        print("BicycleModel:\trho: {:>6.2f}\talpha: {:>6.2f}\tbeta:    {:>6.2f}".format(
+            self._BM.rho, self._BM.alpha*180/pi, self._BM.beta*180/pi) )
+        print("World controls:\tv:   {:>6.2f}\tgamma: {:>6.2f}".format(self._speed, self._steering))
+        print("Picar controls:\tv:   {:>6.2f}\tgamma: {:>6.2f}".format(picar_speed, picar_turn))
+            
+
+    def print_errors(self):
+        '''
+        Print error from goal position and gamma.
+        '''
+        print("----------------------------------------------------------------") 
+
+        print("Distance from goal: {:.2f}m\tHeading error: {:.2f}".format(
+            norm(self._BM.rho), 
+            gamma_a2b( self._my_worldstate.h, self._goal_worldstate.h) * 180/pi)
+            )
+        print('\n')
+
+    def print_goal(self):
+        print("\n\nGoal reached, halting.")
+        print("-------------------------------------------------------") 
+        self.print_status(t=t, dt=dt, picar_speed=picar_speed, picar_turn=picar_turn)
+        print("-------------------------------------------------------") 
+        self.print_errors()

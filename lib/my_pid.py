@@ -8,11 +8,12 @@ Purpose: CSE 276A - Intro to Robotics; Fall 2019
 
 from helpers import sign
 
+
 ##############################################################
 #                       PID CONTROLLER
 ##############################################################
 
-class PID():
+class myPID():
 
     def __init__(self, Kp=0, Ki=0, Kd=0, integral_error=0, last_error=0, dt=1, 
                     integral_max=None, integral_active_region=None):
